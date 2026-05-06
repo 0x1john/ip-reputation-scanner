@@ -1,0 +1,1996 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>IP Reputation Scanner</title>
+<style>
+/* ── Reset & Base ── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #080c14;
+  --bg2: #0d1220;
+  --surface: rgba(0,0,0,0);
+  --surface-hover: rgba(255,255,255,0.04);
+  --border: rgba(255,255,255,0.16);
+  --border-bright: rgba(99,179,255,0.35);
+  --text: #e2e8f0;
+  --text-muted: #64748b;
+  --text-dim: #334155;
+  --blue: #3b82f6;
+  --blue-glow: rgba(59,130,246,0.25);
+  --purple: #8b5cf6;
+  --green: #10b981;
+  --yellow: #f59e0b;
+  --red: #ef4444;
+  --cyan: #06b6d4;
+  --radius: 14px;
+  --radius-sm: 8px;
+  --shadow: 0 4px 24px rgba(0,0,0,0.4);
+  --shadow-lg: 0 8px 48px rgba(0,0,0,0.6);
+}
+
+body {
+  background: #020510;
+  color: var(--text);
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  min-height: 100vh;
+  overflow-x: hidden;
+  text-shadow: 0 1px 4px rgba(0,0,0,0.9);
+}
+
+/* ── Threat map iframe background — full screen, no masking ── */
+#threatMapBg {
+  position: fixed;
+  top: -52px; left: 0;
+  width: 100%; height: calc(100% + 52px);
+  border: none;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.88;
+}
+
+/* No overlay — map fully visible */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: transparent;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.page { position: relative; z-index: 2; max-width: 1300px; margin: 0 auto; padding: 24px 20px 60px; }
+
+/* ── Glass Card ── */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  backdrop-filter: blur(28px) saturate(180%);
+  -webkit-backdrop-filter: blur(28px) saturate(180%);
+  box-shadow: 0 2px 0 0 rgba(255,255,255,0.04) inset, 0 8px 32px rgba(0,0,0,0.5);
+  transition: border-color 0.25s, box-shadow 0.25s;
+}
+.card:hover {
+  border-color: var(--border-bright);
+  box-shadow: 0 2px 0 0 rgba(255,255,255,0.06) inset, 0 8px 48px rgba(0,0,0,0.6), 0 0 0 1px rgba(59,130,246,0.12);
+}
+
+/* ── Header ── */
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 28px;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.header-brand { display: flex; flex-direction: column; gap: 6px; }
+
+.logo {
+  font-size: clamp(1.5rem, 4vw, 2.25rem);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  background: linear-gradient(135deg, #93c5fd 0%, #c4b5fd 45%, #6ee7b7 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  line-height: 1.1;
+  filter: drop-shadow(0 0 18px rgba(139,92,246,0.4));
+}
+
+.logo-sub {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.service-tag {
+  font-size: 0.68rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 20px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.tag-vt { background: rgba(16,185,129,0.12); color: #34d399; border: 1px solid rgba(16,185,129,0.2); }
+.tag-abuse { background: rgba(245,158,11,0.12); color: #fbbf24; border: 1px solid rgba(245,158,11,0.2); }
+.tag-talos { background: rgba(59,130,246,0.12); color: #60a5fa; border: 1px solid rgba(59,130,246,0.2); }
+
+.header-actions { display: flex; gap: 8px; align-items: center; padding-top: 4px; }
+
+/* ── Buttons ── */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.18s cubic-bezier(0.4,0,0.2,1);
+  white-space: nowrap;
+  padding: 0.5rem 1rem;
+  position: relative;
+  overflow: hidden;
+}
+.btn::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: white;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.btn:active::after { opacity: 0.07; }
+
+.btn-primary {
+  background: linear-gradient(135deg, #2563eb, #4f46e5);
+  color: white;
+  box-shadow: 0 0 24px rgba(59,130,246,0.4), 0 2px 8px rgba(0,0,0,0.4);
+  animation: btnPulse 3s ease infinite;
+}
+@keyframes btnPulse {
+  0%,100% { box-shadow: 0 0 24px rgba(59,130,246,0.4), 0 2px 8px rgba(0,0,0,0.4); }
+  50%      { box-shadow: 0 0 40px rgba(99,102,241,0.55), 0 2px 8px rgba(0,0,0,0.4); }
+}
+.btn-primary:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 0 50px rgba(99,102,241,0.6), 0 6px 20px rgba(0,0,0,0.5);
+  animation: none;
+}
+.btn-primary:disabled { opacity: 0.35; cursor: not-allowed; transform: none; animation: none; }
+
+.btn-success {
+  background: linear-gradient(135deg, #10b981, #059669);
+  color: white;
+  box-shadow: 0 0 16px rgba(16,185,129,0.25);
+}
+.btn-success:hover { transform: translateY(-1px); box-shadow: 0 0 24px rgba(16,185,129,0.4); }
+
+.btn-warning {
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+  color: white;
+  box-shadow: 0 0 16px rgba(245,158,11,0.25);
+}
+.btn-warning:hover:not(:disabled) { transform: translateY(-1px); }
+.btn-warning:disabled { opacity: 0.35; cursor: not-allowed; }
+
+.btn-danger {
+  background: linear-gradient(135deg, #ef4444, #dc2626);
+  color: white;
+  box-shadow: 0 0 16px rgba(239,68,68,0.2);
+}
+.btn-danger:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 0 24px rgba(239,68,68,0.35); }
+.btn-danger:disabled { opacity: 0.35; cursor: not-allowed; }
+
+.btn-ghost {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+}
+.btn-ghost:hover:not(:disabled) {
+  background: var(--surface-hover);
+  border-color: var(--border-bright);
+  transform: translateY(-1px);
+}
+.btn-ghost:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.btn-sm { padding: 0.3rem 0.7rem; font-size: 0.75rem; gap: 4px; }
+.btn-xs { padding: 0.18rem 0.5rem; font-size: 0.7rem; gap: 3px; }
+
+/* ── API Keys Section ── */
+.collapsible-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 18px;
+  cursor: pointer;
+  user-select: none;
+  border-radius: var(--radius);
+  transition: background 0.15s;
+}
+.collapsible-header:hover { background: var(--surface-hover); }
+
+.collapsible-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.875rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.collapsible-icon {
+  width: 30px; height: 30px;
+  border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 0.95rem;
+  background: linear-gradient(135deg, rgba(59,130,246,0.2), rgba(139,92,246,0.2));
+  border: 1px solid rgba(59,130,246,0.2);
+  flex-shrink: 0;
+}
+
+.collapsible-meta {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.chevron-icon {
+  width: 18px; height: 18px;
+  color: var(--text-muted);
+  transition: transform 0.3s cubic-bezier(0.4,0,0.2,1);
+  flex-shrink: 0;
+}
+.chevron-icon.open { transform: rotate(180deg); }
+
+.collapsible-body {
+  overflow: hidden;
+  transition: max-height 0.4s cubic-bezier(0.4,0,0.2,1), opacity 0.3s;
+  max-height: 800px;
+  opacity: 1;
+}
+.collapsible-body.closed { max-height: 0; opacity: 0; }
+
+.api-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px;
+  padding: 4px 18px 16px;
+}
+
+.api-service-block {
+  background: rgba(0,0,0,0.2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px;
+  transition: border-color 0.2s;
+}
+.api-service-block:hover { border-color: var(--border-bright); }
+
+.api-service-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.api-service-name {
+  font-size: 0.8rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.api-service-name .dot-indicator {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.api-limit-badge {
+  font-size: 0.65rem;
+  padding: 2px 7px;
+  border-radius: 12px;
+  background: rgba(255,255,255,0.05);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+}
+
+.key-row { display: flex; align-items: center; gap: 6px; margin-bottom: 7px; }
+.key-num { font-size: 0.65rem; color: var(--text-dim); font-weight: 600; min-width: 18px; text-align: right; }
+.key-status { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+.key-filled { background: var(--green); box-shadow: 0 0 6px rgba(16,185,129,0.5); }
+.key-empty { background: var(--text-dim); }
+.key-limited { background: var(--yellow); box-shadow: 0 0 6px rgba(245,158,11,0.5); }
+
+.key-input {
+  flex: 1;
+  background: rgba(0,0,0,0.3);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 5px 8px;
+  font-size: 0.72rem;
+  font-family: 'Courier New', monospace;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  outline: none;
+}
+.key-input:focus { border-color: var(--blue); box-shadow: 0 0 0 2px var(--blue-glow); }
+.key-input::placeholder { color: var(--text-dim); font-family: 'Segoe UI', sans-serif; }
+
+.icon-btn {
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  border-radius: 5px;
+  padding: 4px 6px;
+  cursor: pointer;
+  font-size: 0.7rem;
+  transition: all 0.15s;
+  flex-shrink: 0;
+}
+.icon-btn:hover { background: var(--surface-hover); color: var(--text); border-color: var(--border-bright); }
+.icon-btn.danger:hover { color: var(--red); border-color: rgba(239,68,68,0.4); }
+
+.api-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 18px 14px;
+  border-top: 1px solid var(--border);
+  margin-top: 2px;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.cors-section { padding: 0 18px 14px; }
+.cors-inner {
+  background: rgba(0,0,0,0.2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+.cors-label { font-size: 0.72rem; color: var(--text-muted); margin-bottom: 7px; display: flex; align-items: center; gap: 5px; }
+.cors-input-row { display: flex; gap: 8px; align-items: center; }
+
+/* ── Input Section ── */
+.section { padding: 18px; }
+.section-title { font-size: 0.8rem; font-weight: 700; color: var(--text); display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+.section-title .icon { opacity: 0.7; }
+
+.ip-toolbar { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; align-items: center; }
+.ip-hint { font-size: 0.68rem; color: var(--text-dim); margin-left: auto; }
+
+.ip-textarea {
+  width: 100%;
+  background: rgba(0,0,0,0.25);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 10px;
+  padding: 12px 14px;
+  font-size: 0.82rem;
+  font-family: 'Courier New', monospace;
+  resize: vertical;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  min-height: 110px;
+  line-height: 1.6;
+}
+.ip-textarea:focus { border-color: var(--blue); box-shadow: 0 0 0 3px var(--blue-glow); }
+.ip-textarea::placeholder { color: var(--text-dim); font-family: 'Segoe UI', sans-serif; font-size: 0.78rem; line-height: 1.6; }
+
+.csv-selector {
+  display: none;
+  margin-top: 10px;
+  background: rgba(59,130,246,0.06);
+  border: 1px solid rgba(59,130,246,0.2);
+  border-radius: 8px;
+  padding: 8px 12px;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+.csv-selector.show { display: flex; }
+.csv-selector select {
+  background: rgba(0,0,0,0.3);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 5px;
+  padding: 3px 6px;
+  font-size: 0.72rem;
+  outline: none;
+  cursor: pointer;
+}
+
+/* ── Controls Bar ── */
+.controls-bar { padding: 14px 18px; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.controls-divider { width: 1px; height: 28px; background: var(--border); }
+.controls-options { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.ctrl-label { font-size: 0.72rem; color: var(--text-muted); font-weight: 600; }
+
+.ctrl-select {
+  background: rgba(0,0,0,0.3);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 5px 8px;
+  font-size: 0.78rem;
+  outline: none;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+.ctrl-select:focus { border-color: var(--blue); }
+
+.ctrl-input {
+  background: rgba(0,0,0,0.3);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 5px 8px;
+  font-size: 0.78rem;
+  width: 80px;
+  outline: none;
+  transition: border-color 0.15s;
+  text-align: center;
+}
+.ctrl-input:focus { border-color: var(--blue); }
+
+.svc-toggle {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  transition: all 0.15s;
+  user-select: none;
+}
+.svc-toggle:hover { border-color: var(--border-bright); color: var(--text); }
+.svc-toggle input[type=checkbox] { display: none; }
+.svc-toggle.active {
+  border-color: rgba(59,130,246,0.4);
+  background: rgba(59,130,246,0.08);
+  color: #93c5fd;
+}
+
+.controls-right { margin-left: auto; display: flex; gap: 6px; }
+
+/* VT custom checkbox tick */
+#svcVT::after {
+  content: '';
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -58%) rotate(45deg);
+  width: 4px; height: 7px;
+  border-right: 2px solid #fff;
+  border-bottom: 2px solid #fff;
+  display: none;
+}
+#svcVT:checked::after { display: block; }
+
+/* ── Progress ── */
+.progress-section {
+  padding: 0 18px 16px;
+  display: none;
+  animation: fadeIn 0.3s ease;
+}
+.progress-section.show { display: block; }
+.progress-meta { display: flex; justify-content: space-between; margin-bottom: 6px; }
+.progress-meta span { font-size: 0.72rem; color: var(--text-muted); }
+.progress-track {
+  height: 6px;
+  background: rgba(255,255,255,0.06);
+  border-radius: 99px;
+  overflow: hidden;
+  position: relative;
+}
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #3b82f6, #8b5cf6, #06b6d4);
+  background-size: 200% 100%;
+  border-radius: 99px;
+  transition: width 0.4s cubic-bezier(0.4,0,0.2,1);
+  animation: shimmer 2s linear infinite;
+}
+@keyframes shimmer { 0%{ background-position:200% 0 } 100%{ background-position:-200% 0 } }
+.progress-detail { display: flex; gap: 16px; margin-top: 6px; }
+.progress-detail span { font-size: 0.7rem; color: var(--text-dim); }
+
+/* ── Stats Row ── */
+.stats-row {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 10px;
+  margin-bottom: 14px;
+  display: none;
+  animation: fadeUp 0.4s ease;
+}
+.stats-row.show { display: grid; }
+
+.stat-card {
+  border-radius: 12px;
+  padding: 14px 16px;
+  border: 1px solid;
+  text-align: center;
+  backdrop-filter: blur(28px) saturate(180%);
+  -webkit-backdrop-filter: blur(28px) saturate(180%);
+  box-shadow: 0 2px 0 rgba(255,255,255,0.05) inset, 0 4px 20px rgba(0,0,0,0.4);
+  transition: transform 0.2s, box-shadow 0.2s;
+  cursor: default;
+}
+.stat-card:hover { transform: translateY(-3px); box-shadow: 0 2px 0 rgba(255,255,255,0.07) inset, 0 8px 32px rgba(0,0,0,0.5); }
+.stat-clean    { background: rgba(16,185,129,0.12); border-color: rgba(16,185,129,0.28); }
+.stat-suspicious { background: rgba(245,158,11,0.11); border-color: rgba(245,158,11,0.28); }
+.stat-malicious { background: rgba(239,68,68,0.11); border-color: rgba(239,68,68,0.28); }
+.stat-error   { background: rgba(100,116,139,0.10); border-color: rgba(100,116,139,0.22); }
+.stat-total   { background: rgba(59,130,246,0.11); border-color: rgba(59,130,246,0.28); }
+
+.stat-num {
+  font-size: 1.75rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1;
+  margin-bottom: 4px;
+  transition: transform 0.2s;
+}
+.stat-card:hover .stat-num { transform: scale(1.05); }
+.stat-clean .stat-num { color: #34d399; }
+.stat-suspicious .stat-num { color: #fbbf24; }
+.stat-malicious .stat-num { color: #f87171; }
+.stat-error .stat-num { color: var(--text-muted); }
+.stat-total .stat-num { color: #60a5fa; }
+.stat-label { font-size: 0.68rem; color: var(--text-muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
+
+/* ── Results Table ── */
+.results-card { display: none; animation: fadeUp 0.4s ease; }
+.results-card.show { display: block; }
+
+.results-toolbar {
+  padding: 14px 18px 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+}
+
+.filter-tabs { display: flex; gap: 2px; background: rgba(0,0,0,0.2); border-radius: 8px; padding: 3px; }
+.filter-tab {
+  padding: 5px 12px;
+  border-radius: 6px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  color: var(--text-muted);
+  transition: all 0.18s;
+  white-space: nowrap;
+  user-select: none;
+}
+.filter-tab:hover { color: var(--text); }
+.filter-tab.active { background: var(--surface-hover); color: var(--text); }
+.filter-tab.active.mal { background: rgba(239,68,68,0.15); color: #f87171; }
+.filter-tab.active.sus { background: rgba(245,158,11,0.12); color: #fbbf24; }
+.filter-tab.active.clean { background: rgba(16,185,129,0.12); color: #34d399; }
+.filter-tab.active.err { background: rgba(100,116,139,0.12); color: var(--text-muted); }
+
+.search-box {
+  position: relative;
+  flex-shrink: 0;
+}
+.search-box::before {
+  content: '⌕';
+  position: absolute;
+  left: 9px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-dim);
+  font-size: 0.9rem;
+  pointer-events: none;
+}
+.search-input {
+  background: rgba(0,0,0,0.25);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 7px;
+  padding: 6px 10px 6px 26px;
+  font-size: 0.75rem;
+  width: 170px;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.search-input:focus { border-color: var(--blue); box-shadow: 0 0 0 2px var(--blue-glow); }
+.search-input::placeholder { color: var(--text-dim); }
+
+.results-right { margin-left: auto; display: flex; gap: 6px; }
+
+/* Table */
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
+thead th {
+  background: rgba(2,6,20,0.6);
+  color: var(--text-muted);
+  font-weight: 700;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+  user-select: none;
+  transition: color 0.15s;
+}
+thead th:hover { color: var(--text); }
+thead th.sorted { color: #93c5fd; }
+
+tbody tr {
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+  transition: background 0.15s;
+}
+tbody tr:hover { background: rgba(59,130,246,0.05); }
+tbody tr:last-child { border-bottom: none; }
+td { padding: 9px 12px; vertical-align: middle; }
+td.mono { font-family: 'Courier New', monospace; font-size: 0.75rem; }
+
+/* Score cells */
+.score-wrap { display: inline-flex; align-items: center; gap: 6px; }
+.score-bar { width: 42px; height: 4px; background: rgba(255,255,255,0.08); border-radius: 2px; overflow: hidden; display: inline-block; }
+.score-fill { height: 100%; border-radius: 2px; transition: width 0.4s ease; }
+
+/* Badges */
+.badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 8px; border-radius: 20px; font-size: 0.67rem;
+  font-weight: 700; letter-spacing: 0.02em; white-space: nowrap;
+}
+.badge-clean { background: rgba(16,185,129,0.12); color: #34d399; border: 1px solid rgba(16,185,129,0.25); }
+.badge-suspicious { background: rgba(245,158,11,0.12); color: #fbbf24; border: 1px solid rgba(245,158,11,0.25); }
+.badge-malicious { background: rgba(239,68,68,0.12); color: #f87171; border: 1px solid rgba(239,68,68,0.25); }
+.badge-error { background: rgba(100,116,139,0.1); color: var(--text-muted); border: 1px solid rgba(100,116,139,0.2); }
+.badge-pending { background: rgba(59,130,246,0.1); color: #60a5fa; border: 1px solid rgba(59,130,246,0.2); }
+.badge-scanning { background: rgba(139,92,246,0.1); color: #a78bfa; border: 1px solid rgba(139,92,246,0.2); animation: pulse-badge 1.2s ease infinite; }
+@keyframes pulse-badge { 0%,100%{opacity:1} 50%{opacity:0.6} }
+
+/* Link buttons in table */
+.link-btn {
+  display: inline-flex; align-items: center;
+  padding: 2px 7px; border-radius: 5px;
+  font-size: 0.65rem; font-weight: 600;
+  text-decoration: none;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  background: rgba(255,255,255,0.03);
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+.link-btn:hover { border-color: var(--border-bright); color: var(--text); background: var(--surface-hover); }
+
+/* Pagination */
+.pagination {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 18px;
+  border-top: 1px solid var(--border);
+  flex-wrap: wrap; gap: 8px;
+}
+.page-info { font-size: 0.7rem; color: var(--text-muted); }
+.page-btns { display: flex; gap: 3px; }
+
+/* ── Spinner ── */
+.spinner {
+  display: inline-block;
+  width: 12px; height: 12px;
+  border: 2px solid rgba(255,255,255,0.1);
+  border-top-color: var(--blue);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  vertical-align: middle;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Notifications ── */
+.notif-stack {
+  position: fixed;
+  top: 20px; right: 20px;
+  z-index: 9999;
+  display: flex; flex-direction: column; gap: 8px;
+  pointer-events: none;
+  max-width: 340px;
+}
+.notif {
+  padding: 10px 14px;
+  border-radius: 10px;
+  font-size: 0.78rem;
+  font-weight: 500;
+  pointer-events: auto;
+  backdrop-filter: blur(12px);
+  animation: notifIn 0.3s cubic-bezier(0.34,1.56,0.64,1);
+  display: flex; align-items: flex-start; gap: 8px;
+  border: 1px solid;
+  box-shadow: var(--shadow);
+}
+@keyframes notifIn { from { transform: translateX(110%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+.notif-info { background: rgba(30,58,95,0.95); border-color: rgba(59,130,246,0.4); color: #93c5fd; }
+.notif-success { background: rgba(6,46,35,0.95); border-color: rgba(16,185,129,0.4); color: #6ee7b7; }
+.notif-error { background: rgba(69,10,10,0.95); border-color: rgba(239,68,68,0.4); color: #fca5a5; }
+.notif-warn { background: rgba(69,26,3,0.95); border-color: rgba(245,158,11,0.4); color: #fcd34d; }
+
+/* ── Animations ── */
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes fadeUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes borderGlow {
+  0%,100% { box-shadow: 0 0 0 1px rgba(59,130,246,0.0), 0 8px 32px rgba(0,0,0,0.5); }
+  50%      { box-shadow: 0 0 0 1px rgba(59,130,246,0.18), 0 8px 48px rgba(59,130,246,0.08); }
+}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border-bright); border-radius: 3px; }
+
+/* ── Utility ── */
+.hidden { display: none !important; }
+.text-green { color: var(--green); }
+.text-yellow { color: var(--yellow); }
+.text-red { color: var(--red); }
+.text-blue { color: var(--blue); }
+.text-muted { color: var(--text-muted); }
+.text-dim { color: var(--text-dim); }
+.fw-bold { font-weight: 700; }
+
+.gap-2 { gap: 8px; }
+.mb-3 { margin-bottom: 12px; }
+.mb-4 { margin-bottom: 16px; }
+
+@media (max-width: 600px) {
+  .stats-row { grid-template-columns: repeat(3,1fr); }
+  .stats-row .stat-total, .stats-row .stat-error { display: none; }
+  .ip-hint { display: none; }
+  .header { flex-direction: column; }
+}
+</style>
+</head>
+<body>
+
+<iframe id="threatMapBg"
+  src="https://threatmap.checkpoint.com/"
+  scrolling="no"
+  sandbox="allow-scripts allow-same-origin"
+  title="Live Threat Map"></iframe>
+
+<div class="notif-stack" id="notifStack"></div>
+
+<div class="page">
+
+<!-- ── Header ── -->
+<div class="header">
+  <div class="header-brand">
+    <div class="logo">IP Reputation Scanner</div>
+    <div class="logo-sub">
+      <span class="service-tag tag-vt">VirusTotal</span>
+      <span class="service-tag tag-abuse">AbuseIPDB</span>
+      <span class="service-tag tag-talos">Cisco Talos</span>
+    </div>
+  </div>
+  <div class="header-actions">
+    <button class="btn btn-ghost btn-sm" onclick="toggleTheme()" id="themeBtn">☀ Light</button>
+    <button class="btn btn-ghost btn-sm" onclick="resetAll()" style="color:var(--red)">✕ Reset</button>
+  </div>
+</div>
+
+<!-- ── API Keys (collapsible) ── -->
+<div class="card mb-4" id="apiCard">
+  <div class="collapsible-header" onclick="toggleAPI()">
+    <div class="collapsible-title">
+      <div class="collapsible-icon">🔑</div>
+      <span>API Keys &amp; Configuration</span>
+      <span class="collapsible-meta" id="apiStatusMeta">No keys configured</span>
+      <span id="savedPulse" style="display:none;font-size:0.65rem;color:#34d399;font-weight:600;animation:pulse-badge 1s ease 1">✓ saved</span>
+    </div>
+    <svg class="chevron-icon" id="apiChevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="6 9 12 15 18 9"/>
+    </svg>
+  </div>
+
+  <div class="collapsible-body closed" id="apiBody">
+    <div class="api-grid">
+
+      <!-- VirusTotal -->
+      <div class="api-service-block">
+        <div class="api-service-head">
+          <div class="api-service-name" style="color:#34d399">
+            <span class="dot-indicator" style="background:#34d399;box-shadow:0 0 6px rgba(52,211,153,0.6)"></span>
+            VirusTotal
+          </div>
+          <div style="display:flex;gap:6px;align-items:center">
+            <span class="api-limit-badge">4 req/min free</span>
+            <a href="https://www.virustotal.com/gui/user/me/apikey" target="_blank" class="link-btn" style="font-size:0.62rem">↗ Get Key</a>
+          </div>
+        </div>
+        <div id="vt-keys"></div>
+      </div>
+
+      <!-- AbuseIPDB -->
+      <div class="api-service-block">
+        <div class="api-service-head">
+          <div class="api-service-name" style="color:#fbbf24">
+            <span class="dot-indicator" style="background:#fbbf24;box-shadow:0 0 6px rgba(251,191,36,0.6)"></span>
+            AbuseIPDB
+          </div>
+          <div style="display:flex;gap:6px;align-items:center">
+            <span class="api-limit-badge">1K/day free</span>
+            <a href="https://www.abuseipdb.com/account/api" target="_blank" class="link-btn" style="font-size:0.62rem">↗ Get Key</a>
+          </div>
+        </div>
+        <div id="abuse-keys"></div>
+      </div>
+
+      <!-- Cisco Talos -->
+      <div class="api-service-block">
+        <div class="api-service-head">
+          <div class="api-service-name" style="color:#60a5fa">
+            <span class="dot-indicator" style="background:#60a5fa;box-shadow:0 0 6px rgba(96,165,250,0.6)"></span>
+            Cisco Talos
+          </div>
+          <span class="api-limit-badge">No key needed</span>
+        </div>
+        <div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:10px;line-height:1.5;padding:8px 10px;background:rgba(0,0,0,0.2);border-radius:8px;border:1px solid var(--border)">
+          Talos has no public API — direct lookup links are provided per IP. Add a CORS proxy below to attempt live reputation fetching.
+        </div>
+        <label class="ctrl-label" style="display:block;margin-bottom:5px">CORS Proxy URL <span style="color:var(--text-dim)">(optional)</span></label>
+        <input type="text" class="key-input" id="corsProxy" placeholder="e.g. https://corsproxy.io/?" oninput="saveSettings()" style="width:100%;font-family:'Segoe UI',sans-serif" value="https://corsproxy.io/?">
+      </div>
+
+    </div>
+
+    <div class="api-footer">
+      <div style="display:flex;gap:6px">
+        <button class="btn btn-ghost btn-sm" onclick="toggleAllKeys()">👁 Toggle Visibility</button>
+        <button class="btn btn-ghost btn-sm" onclick="clearApiKeys()" style="color:var(--red)">🗑 Clear All Keys</button>
+      </div>
+      <span style="font-size:0.7rem;color:var(--text-dim)">🔒 Keys stored in browser localStorage only</span>
+    </div>
+  </div>
+</div>
+
+<!-- ── IP Input ── -->
+<div class="card mb-4">
+  <div class="section">
+    <div class="section-title">
+      <span class="icon">📋</span>
+      IPs &amp; Domains
+      <span id="ipCountBadge" class="badge badge-pending" style="display:none"></span>
+    </div>
+    <div class="ip-toolbar">
+      <button class="btn btn-ghost btn-sm" onclick="document.getElementById('csvFile').click()">📄 Import CSV / TXT</button>
+      <input type="file" id="csvFile" accept=".csv,.txt" class="hidden" onchange="handleCSVUpload(event)">
+      <button class="btn btn-ghost btn-sm" onclick="loadSamples()">📂 Load Samples</button>
+      <button class="btn btn-ghost btn-sm" onclick="deduplicateIPs()">✓ Deduplicate</button>
+      <button class="btn btn-ghost btn-sm" onclick="clearIPs()" style="color:var(--red)">✕ Clear</button>
+      <span class="ip-hint">Accepts: comma · space · newline · quotes · IPv4, IPv6 &amp; domains</span>
+    </div>
+    <textarea id="ipInput" class="ip-textarea" rows="6"
+      placeholder="Paste IPs or domains — any separator works:&#10;&#10;1.1.1.1   8.8.8.8, 185.220.101.45&#10;example.com, malware.com evil-domain.net&#10;&#10;Or upload a CSV / TXT file above."
+      oninput="updateIPCount()"></textarea>
+    <div class="csv-selector" id="csvSelector">
+      <span>CSV column:</span>
+      <select id="csvColumn"></select>
+      <button class="btn btn-primary btn-xs" onclick="applyCSVColumn()">Apply</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Controls ── -->
+<div class="card mb-4">
+  <div class="controls-bar">
+    <button id="btnStart" class="btn btn-primary" onclick="startScan()">▶ Start Scan</button>
+    <button id="btnPause" class="btn btn-warning" onclick="togglePause()" disabled>⏸ Pause</button>
+    <button id="btnStop" class="btn btn-danger" onclick="stopScan()" disabled>■ Stop</button>
+
+    <div class="controls-divider"></div>
+
+    <div class="controls-options">
+      <span class="ctrl-label">Workers</span>
+      <select id="concurrency" class="ctrl-select" onchange="saveSettings()">
+        <option value="5">5</option>
+        <option value="10">10</option>
+        <option value="20">20</option>
+        <option value="30" selected>30</option>
+        <option value="50">50</option>
+        <option value="100">100</option>
+      </select>
+
+      <span class="ctrl-label">VT Delay (ms)</span>
+      <input type="number" id="vtDelay" class="ctrl-input" value="15000" min="1000" max="120000" step="1000" onchange="saveSettings()">
+
+      <div class="controls-divider"></div>
+
+      <label class="svc-toggle active" id="lbl-abuse">
+        <input type="checkbox" id="svcAbuse" checked onchange="updateSvcToggle('abuse')"> AbuseIPDB
+      </label>
+      <label class="svc-toggle active" id="lbl-talos">
+        <input type="checkbox" id="svcTalos" checked onchange="updateSvcToggle('talos')"> GreyNoise
+      </label>
+    </div>
+
+    <div class="controls-divider"></div>
+
+    <!-- VT toggle — label wraps checkbox so clicking anywhere toggles it -->
+    <label for="svcVT" id="btnVT" style="
+      display:inline-flex;align-items:center;gap:8px;
+      padding:7px 16px;border-radius:8px;cursor:pointer;
+      font-size:0.78rem;font-weight:700;letter-spacing:0.02em;
+      border:1.5px solid rgba(99,102,241,0.3);
+      background:rgba(99,102,241,0.06);color:#94a3b8;
+      transition:all 0.2s;user-select:none;flex-shrink:0">
+      <input type="checkbox" id="svcVT" onchange="updateSvcToggle('vt')"
+        style="appearance:none;-webkit-appearance:none;width:17px;height:17px;
+          border:2px solid #6366f1;border-radius:4px;cursor:pointer;
+          background:transparent;flex-shrink:0;transition:all 0.2s;
+          display:inline-flex;align-items:center;justify-content:center;
+          position:relative">
+      <span id="vtBtnLabel">Include VirusTotal</span>
+      <span style="font-size:0.65rem;opacity:0.5;font-weight:400">(slow)</span>
+    </label>
+
+    <div class="controls-right">
+      <button class="btn btn-ghost btn-sm" onclick="exportCSV()" id="btnCSV" disabled>↓ CSV</button>
+      <button class="btn btn-ghost btn-sm" onclick="exportJSON()" id="btnJSON" disabled>↓ JSON</button>
+    </div>
+  </div>
+
+  <div class="progress-section" id="progressSection">
+    <div class="progress-meta">
+      <span id="progressText">0 / 0</span>
+      <span id="etaText"></span>
+    </div>
+    <div class="progress-track">
+      <div class="progress-fill" id="progressFill" style="width:0%"></div>
+    </div>
+    <div class="progress-detail">
+      <span id="rateEl"></span>
+      <span id="keyStatusInline"></span>
+      <span id="vtProgressTxt" style="color:#a78bfa"></span>
+    </div>
+  </div>
+</div>
+
+<!-- ── Stats ── -->
+<div class="stats-row" id="statsRow">
+  <div class="stat-card stat-clean"><div class="stat-num" id="sClean">0</div><div class="stat-label">Clean</div></div>
+  <div class="stat-card stat-suspicious"><div class="stat-num" id="sSus">0</div><div class="stat-label">Suspicious</div></div>
+  <div class="stat-card stat-malicious"><div class="stat-num" id="sMal">0</div><div class="stat-label">Malicious</div></div>
+  <div class="stat-card stat-error"><div class="stat-num" id="sErr">0</div><div class="stat-label">Errors</div></div>
+  <div class="stat-card stat-total"><div class="stat-num" id="sTotal">0</div><div class="stat-label">Total</div></div>
+</div>
+
+<!-- ── Results ── -->
+<div class="card results-card" id="resultsCard">
+  <div class="results-toolbar">
+    <div class="filter-tabs">
+      <div class="filter-tab active" onclick="setFilter('all',this)">All</div>
+      <div class="filter-tab mal" onclick="setFilter('malicious',this)">✕ Malicious</div>
+      <div class="filter-tab sus" onclick="setFilter('suspicious',this)">⚠ Suspicious</div>
+      <div class="filter-tab clean" onclick="setFilter('clean',this)">✓ Clean</div>
+      <div class="filter-tab err" onclick="setFilter('error',this)">! Errors</div>
+    </div>
+    <div class="search-box">
+      <input type="text" class="search-input" id="searchInput" placeholder="Filter IPs..." oninput="updateSearch()">
+    </div>
+
+    <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
+      <span style="font-size:0.68rem;color:var(--text-muted);font-weight:600;white-space:nowrap">Abuse ≥</span>
+      <input type="number" id="minAbuseInput" min="0" max="100" value="0"
+        style="width:52px;background:rgba(0,0,0,0.25);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:5px 7px;font-size:0.75rem;outline:none;text-align:center"
+        oninput="updateMinAbuse()"
+        onfocus="this.style.borderColor='var(--blue)'" onblur="this.style.borderColor='var(--border)'"
+        placeholder="0">
+      <span style="font-size:0.68rem;color:var(--text-muted)">%</span>
+    </div>
+
+    <div class="results-right">
+      <button class="btn btn-ghost btn-sm" onclick="copyVisible()">⎘ Copy IPs</button>
+    </div>
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th onclick="sortBy('idx')" id="th-idx"># Target ⇅</th>
+          <th onclick="sortBy('domain')" id="th-domain">Domain / rDNS ⇅</th>
+          <th onclick="sortBy('vtMal')" id="th-vtMal">VT Score ⇅</th>
+          <th onclick="sortBy('abuseScore')" id="th-abuseScore">Abuse % ⇅</th>
+          <th onclick="sortBy('talos')" id="th-talos">GN / Talos ⇅</th>
+          <th onclick="sortBy('country')" id="th-country">Country ⇅</th>
+          <th onclick="sortBy('status')" id="th-status">Status ⇅</th>
+          <th>Links</th>
+        </tr>
+      </thead>
+      <tbody id="resultsBody"></tbody>
+    </table>
+  </div>
+
+  <div class="pagination">
+    <span class="page-info" id="pageInfo"></span>
+    <div class="page-btns" id="pageBtns"></div>
+  </div>
+</div>
+
+</div><!-- /page -->
+
+<script>
+'use strict';
+
+const IS_LOCAL = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+
+// ── State ──
+const S = {
+  keys: { vt: ['','','',''], abuse: ['','','',''] },
+  corsProxy: '',
+  results: [],
+  scanning: false, paused: false, stopped: false,
+  concurrency: 30, vtDelay: 15000,
+  svc: { vt: false, abuse: true, talos: true },
+  sortKey: 'status', sortDir: 1,
+  filter: 'all', search: '', minAbuse: 0,
+  page: 0, pageSize: 100,
+  startTime: null, processed: 0, total: 0,
+  showKeys: false,
+  darkMode: true,
+};
+
+// ── Key Manager ──
+class KeyManager {
+  constructor(keys) {
+    this.keys = (keys || []).filter(k => k && k.trim());
+    this.idx = 0;
+    this.limited = new Map();
+  }
+  getKey() {
+    const avail = this.keys.filter(k => !this.limited.has(k));
+    if (!avail.length) return null;
+    const k = avail[this.idx % avail.length];
+    this.idx = (this.idx + 1) % avail.length;
+    return k;
+  }
+  markLimited(key, ms = 60000) {
+    if (this.limited.has(key)) clearTimeout(this.limited.get(key));
+    const id = setTimeout(() => {
+      this.limited.delete(key);
+      notify('info', `Key …${key.slice(-4)} available again`);
+      refreshKeyStatus();
+    }, ms);
+    this.limited.set(key, id);
+    refreshKeyStatus();
+  }
+  has() { return this.keys.some(k => !this.limited.has(k)); }
+  count() { return this.keys.length; }
+  limitedCount() { return this.limited.size; }
+}
+
+let vtKM, abuseKM;
+
+// ── Semaphore ──
+class Sem {
+  constructor(n) { this.n = n; this.active = 0; this.q = []; }
+  async acquire() {
+    if (this.active < this.n) { this.active++; return; }
+    await new Promise(r => this.q.push(r));
+    this.active++;
+  }
+  release() { this.active--; if (this.q.length) this.q.shift()(); }
+}
+
+// ── Target Parsing (IPs + domains) ──
+function isIP(s) {
+  if (/^(\d{1,3}\.){3}\d{1,3}$/.test(s)) return s.split('.').every(n => +n >= 0 && +n <= 255);
+  if (/^[0-9a-fA-F:]{2,39}$/.test(s) && s.includes(':')) return true;
+  return false;
+}
+
+function isDomain(s) {
+  return /^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$/.test(s) && !isIP(s);
+}
+
+function isTarget(s) { return isIP(s) || isDomain(s); }
+
+function parseIPs(raw) {
+  const s = raw.replace(/[,;'"<>[\]{}()]/g, ' ').replace(/\s+/g, '\n');
+  const out = [];
+  for (const line of s.split('\n')) {
+    const t = line.trim().toLowerCase();
+    if (t && isTarget(t)) out.push(t);
+  }
+  return out;
+}
+
+// ── API Calls ──
+async function vtFetch(target, key) {
+  const type = isIP(target) ? 'ip_addresses' : 'domains';
+  const r = await fetch(`https://www.virustotal.com/api/v3/${type}/${target}`, { headers: { 'x-apikey': key } });
+  if (r.status === 429) { const w = parseInt(r.headers.get('X-RateLimit-Backoff') || '60') * 1000; throw { T: 'RL', key, wait: w }; }
+  if (r.status === 404) return { missing: true };
+  if (!r.ok) throw { T: 'ERR', msg: `VT HTTP ${r.status}` };
+  const d = await r.json();
+  const a = d.data?.attributes || {};
+  const st = a.last_analysis_stats || {};
+  const tot = Object.values(st).reduce((s, v) => s + v, 0);
+  return { mal: st.malicious || 0, sus: st.suspicious || 0, tot, rep: a.reputation ?? null, country: a.country || a.registrar_country || null, asOwner: a.as_owner || a.registrar || null, cats: a.categories ? Object.values(a.categories).slice(0,2).join(', ') : '' };
+}
+
+async function abuseFetch(ip, key) {
+  let r;
+  if (IS_LOCAL) {
+    r = await fetch(`/api/abuseipdb?ip=${encodeURIComponent(ip)}`, { headers: { 'x-abuse-key': key } });
+  } else {
+    r = await fetch(`https://api.abuseipdb.com/api/v2/check?ipAddress=${encodeURIComponent(ip)}&maxAgeInDays=90`, { headers: { 'Key': key, 'Accept': 'application/json' } });
+    if (!r.ok && (r.status === 0 || r.type === 'opaque')) throw { T: 'CORS' };
+  }
+  if (r.status === 429) throw { T: 'RL', key, wait: 86400000 };
+  if (r.status === 422) throw { T: 'SKIP' }; // invalid/private IP — AbuseIPDB can't check it
+  if (!r.ok) {
+    let msg = `HTTP ${r.status}`;
+    try {
+      const body = await r.json();
+      msg = body.errors?.[0]?.detail || body.error || msg;
+    } catch {}
+    if (r.status === 401) msg = 'Invalid API key';
+    if (r.status === 404 && IS_LOCAL) msg = 'Open localhost:3000';
+    throw { T: 'ERR', msg };
+  }
+  let json;
+  try { json = await r.json(); } catch { throw { T: 'ERR', msg: 'Bad response' }; }
+  const d = json.data || {};
+  return { score: d.abuseConfidenceScore ?? null, reports: d.totalReports ?? 0, country: d.countryCode || null, isp: d.isp || null, usage: d.usageType || null, domain: d.domain || null };
+}
+
+async function talosFetch(target) {
+  const talosLink = `https://talosintelligence.com/reputation_center/lookup?search=${target}`;
+  const gnLink    = `https://viz.greynoise.io/ip/${target}`;
+
+  if (isIP(target)) {
+    // 1 — Try Talos first via server proxy (corsproxy.io)
+    if (IS_LOCAL) {
+      try {
+        const r = await fetch(`/api/talos?ip=${encodeURIComponent(target)}`);
+        if (r.ok) {
+          const d = await r.json();
+          if (d.threat_level) {
+            const rep = d.threat_level;
+            const low = rep.toLowerCase();
+            const color = (low.includes('poor') || low.includes('untrust') || low.includes('malici') || low.includes('bad') || low.includes('high'))
+              ? 'red'
+              : (low.includes('unfavor') || low.includes('neutral') || low.includes('unknown') || low.includes('moderate'))
+                ? 'yellow'
+                : 'green';
+            return { rep, color, talosLink, gnLink, src: 'talos' };
+          }
+        }
+      } catch {}
+
+      // 2 — Talos returned nothing: fall back to GreyNoise
+      try {
+        const r = await fetch(`/api/greynoise?ip=${encodeURIComponent(target)}`);
+        if (r.ok) {
+          const d = await r.json();
+          if (d.message === 'Success' || d.classification) {
+            let rep, color;
+            if (d.riot)                               { rep = 'Trusted';   color = 'green';  }
+            else if (d.classification === 'benign')   { rep = 'Benign';    color = 'green';  }
+            else if (d.classification === 'malicious'){ rep = 'Malicious'; color = 'red';    }
+            else if (d.noise)                         { rep = 'Scanner';   color = 'yellow'; }
+            else                                      { rep = 'Unknown';   color = 'muted';  }
+            return { rep, color, noise: d.noise, riot: d.riot, name: d.name || null, gnLink, talosLink, src: 'gn' };
+          }
+        }
+      } catch {}
+    } else {
+      // Non-local: try Talos via user CORS proxy
+      const proxy = S.corsProxy.trim();
+      if (proxy) {
+        try {
+          const url = `https://talosintelligence.com/cloud_intel/ip_info_lookups`;
+          const r = await fetch(`${proxy}${encodeURIComponent(url)}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ip: target }),
+          });
+          if (r.ok) {
+            const d = await r.json();
+            if (d.threat_level) return { rep: d.threat_level, color: null, talosLink, gnLink, src: 'talos' };
+          }
+        } catch {}
+      }
+    }
+    return { rep: null, talosLink, gnLink, src: null };
+  }
+
+  // ── Domains: Talos only ──
+  if (IS_LOCAL) {
+    try {
+      const r = await fetch(`/api/talos?domain=${encodeURIComponent(target)}`);
+      if (r.ok) {
+        const d = await r.json();
+        if (d.threat_level) return { rep: d.threat_level, color: null, talosLink, gnLink, src: 'talos' };
+      }
+    } catch {}
+  }
+  return { rep: null, talosLink, gnLink, src: null };
+}
+
+// ── Scan Engine ──
+const vtTimers = {};
+const vtLocks = {};
+async function throttleVT(key) {
+  const myTurn = (vtLocks[key] || Promise.resolve()).then(async () => {
+    const wait = S.vtDelay - (Date.now() - (vtTimers[key] || 0));
+    if (wait > 0) await sleep(wait);
+    vtTimers[key] = Date.now();
+  });
+  vtLocks[key] = myTurn.catch(() => {});
+  await myTurn;
+}
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+let sem;
+
+// Fast scan: DNS + AbuseIPDB + GreyNoise — no VT, runs at high concurrency
+async function scanFast(ip, idx) {
+  const res = S.results[idx];
+  res.status = 'scanning';
+  renderRow(idx);
+  const tasks = [];
+
+  if (isDomain(ip) && IS_LOCAL) tasks.push((async () => {
+    try {
+      const r = await fetch(`/api/resolve?domain=${encodeURIComponent(ip)}`);
+      if (r.ok) { const d = await r.json(); if (d.ip) res.resolvedIP = d.ip; }
+    } catch {}
+  })());
+
+  if (isIP(ip) && IS_LOCAL) tasks.push((async () => {
+    try {
+      const r = await fetch(`/api/rdns?ip=${encodeURIComponent(ip)}`);
+      if (r.ok) { const d = await r.json(); if (d.hostname) res.rdns = d.hostname; }
+    } catch {}
+  })());
+
+  if (S.svc.abuse) tasks.push((async () => {
+    if (isDomain(ip)) { res.abuse = { skip: true }; return; }
+    if (!abuseKM.has()) { res.abuse = { err: 'No API key' }; return; }
+    let tries = 0;
+    while (tries <= abuseKM.count()) {
+      if (S.stopped) return;
+      const key = abuseKM.getKey();
+      if (!key) { res.abuse = { err: 'Keys rate-limited' }; return; }
+      try { res.abuse = await abuseFetch(ip, key); return; }
+      catch (e) {
+        if (e.T === 'RL') { abuseKM.markLimited(key, e.wait || 86400000); notify('warn', `AbuseIPDB key …${key.slice(-4)} rate-limited`); tries++; }
+        else if (e.T === 'SKIP') { res.abuse = { skip: true }; return; }
+        else if (e.T === 'CORS') { res.abuse = { err: 'CORS — use local proxy' }; return; }
+        else { res.abuse = { err: e.msg || 'Request failed' }; return; }
+      }
+    }
+    res.abuse = { err: 'All keys exhausted' };
+  })());
+
+  if (S.svc.talos) tasks.push((async () => {
+    try { if (!S.stopped) res.talos = await talosFetch(ip); }
+    catch { res.talos = { rep: null, talosLink: `https://talosintelligence.com/reputation_center/lookup?search=${ip}` }; }
+  })());
+
+  await Promise.all(tasks);
+  res.status = calcStatus(res);
+  res.done = true;
+  renderRow(idx);
+}
+
+// VT queue: runs one worker per configured key, fills in VT data after fast scan marks res.done
+async function runVTQueue(ips) {
+  if (!vtKM.has()) {
+    ips.forEach((_, idx) => { if (S.results[idx]) S.results[idx].vt = { err: 'No VT key' }; });
+    return;
+  }
+  const queue = ips.map((ip, idx) => ({ ip, idx }));
+  const numWorkers = Math.min(Math.max(vtKM.count(), 1), 4);
+  let vtDone = 0;
+
+  await Promise.all(Array.from({ length: numWorkers }, async () => {
+    while (queue.length > 0 && !S.stopped) {
+      while (S.paused && !S.stopped) await sleep(300);
+      const job = queue.shift();
+      if (!job) break;
+      const { ip, idx } = job;
+      const res = S.results[idx];
+      // Wait until fast scan has finished for this IP so calcStatus has full data
+      while (!res.done && !S.stopped) await sleep(80);
+      if (S.stopped) break;
+
+      let tries = 0, done = false;
+      while (!done && tries <= vtKM.count()) {
+        if (S.stopped) return;
+        const key = vtKM.getKey();
+        if (!key) { res.vt = { err: 'All keys rate-limited' }; done = true; break; }
+        try {
+          await throttleVT(key);
+          if (S.stopped) return;
+          res.vt = await vtFetch(ip, key);
+          done = true;
+        } catch (e) {
+          if (e.T === 'RL') { vtKM.markLimited(key, e.wait || 60000); notify('warn', `VT key …${key.slice(-4)} rate-limited`); tries++; }
+          else { res.vt = { err: e.msg || 'VT error' }; done = true; }
+        }
+      }
+      if (!done) res.vt = { err: 'All VT keys exhausted' };
+
+      res.status = calcStatus(res);
+      renderRow(idx);
+      refreshStats();
+      vtDone++;
+      // Update VT progress in the detail line
+      const el = document.getElementById('vtProgressTxt');
+      if (el) el.textContent = `VT: ${vtDone}/${ips.length}`;
+    }
+  }));
+}
+
+function calcStatus(res) {
+  const mal = res.vt?.mal || 0, sus = res.vt?.sus || 0, score = res.abuse?.score ?? 0;
+  const gnClass = res.talos?.rep?.toLowerCase();
+  const vtErr = !!res.vt?.err, abuseErr = !!res.abuse?.err;
+  if (mal >= 3 || score >= 75 || gnClass === 'malicious') return 'malicious';
+  if (mal >= 1 || sus >= 3 || score >= 25 || gnClass === 'scanner') return 'suspicious';
+  if (vtErr && abuseErr && S.svc.vt && S.svc.abuse) return 'error';
+  return 'clean';
+}
+
+async function startScan() {
+  // Always read checkbox state directly — never rely on stale S.svc values
+  S.svc.vt    = document.getElementById('svcVT').checked;
+  S.svc.abuse = document.getElementById('svcAbuse').checked;
+  S.svc.talos = document.getElementById('svcTalos').checked;
+
+  const allParsed = parseIPs(document.getElementById('ipInput').value);
+  if (!allParsed.length) { notify('error', 'No valid IPs found'); return; }
+  const seen = new Set();
+  const ips = allParsed.filter(ip => seen.has(ip) ? false : (seen.add(ip), true));
+  const dupes = allParsed.length - ips.length;
+
+  vtKM = new KeyManager(S.keys.vt);
+  abuseKM = new KeyManager(S.keys.abuse);
+  if (S.svc.vt && !vtKM.has()) notify('warn', 'No VirusTotal keys — VT column will be empty');
+  if (S.svc.abuse && !abuseKM.has()) notify('warn', 'No AbuseIPDB keys — Abuse column will show errors');
+
+  S.results = ips.map((ip, i) => ({ ip, idx: i, status: 'pending', done: false, vt: null, abuse: null, talos: null, resolvedIP: null, rdns: null }));
+  S.total = ips.length; S.processed = 0; S.startTime = Date.now();
+  S.scanning = true; S.paused = false; S.stopped = false; S.page = 0;
+  sem = new Sem(S.concurrency);
+  Object.keys(vtLocks).forEach(k => delete vtLocks[k]);
+  Object.keys(vtTimers).forEach(k => delete vtTimers[k]);
+
+  setControls(true);
+  show('progressSection'); show('statsRow'); show('resultsCard');
+  document.getElementById('btnCSV').disabled = false;
+  document.getElementById('btnJSON').disabled = false;
+
+  const vtEl = document.getElementById('vtProgressTxt');
+  if (vtEl) vtEl.textContent = S.svc.vt && vtKM.has() ? 'VT: queued' : '';
+
+  renderAllRows(); refreshStats();
+  if (dupes > 0) notify('info', `Removed ${dupes.toLocaleString()} duplicates — scanning ${ips.length.toLocaleString()} unique`);
+  notify('info', `Fast scan: ${ips.length.toLocaleString()} IPs · ${S.concurrency} workers${S.svc.vt && vtKM.has() ? ' · VT running in background' : ''}`);
+
+  // Phase 1 — fast workers: AbuseIPDB + GreyNoise + DNS (no VT delay)
+  const fastDone = Promise.all(ips.map((ip, idx) => (async () => {
+    await sem.acquire();
+    try {
+      while (S.paused && !S.stopped) await sleep(300);
+      if (!S.stopped) await scanFast(ip, idx);
+    } finally { S.processed++; refreshProgress(); sem.release(); }
+  })()));
+
+  // Phase 2 — VT background queue: one worker per key, fills in after fast scan
+  const vtDone = S.svc.vt ? runVTQueue(ips) : Promise.resolve();
+
+  await fastDone;
+  if (!S.stopped) notify('info', `Fast scan complete — ${S.svc.vt && vtKM.has() ? 'VT still running in background' : 'all done'}`);
+
+  await vtDone;
+
+  S.scanning = false;
+  setControls(false);
+  if (!S.stopped) {
+    if (vtEl) vtEl.textContent = '';
+    notify('success', `Done! ${S.total.toLocaleString()} IPs scanned`);
+    refreshProgress(true);
+  }
+}
+
+function togglePause() {
+  S.paused = !S.paused;
+  document.getElementById('btnPause').innerHTML = S.paused ? '▶ Resume' : '⏸ Pause';
+  notify('info', S.paused ? 'Scan paused' : 'Scan resumed');
+}
+
+function stopScan() {
+  S.stopped = true; S.scanning = false; S.paused = false;
+  setControls(false); notify('warn', 'Scan stopped');
+}
+
+function setControls(on) {
+  document.getElementById('btnStart').disabled = on;
+  document.getElementById('btnPause').disabled = !on;
+  document.getElementById('btnStop').disabled = !on;
+  if (!on) document.getElementById('btnPause').innerHTML = '⏸ Pause';
+}
+
+// ── Rendering ──
+function renderAllRows() {
+  const tbody = document.getElementById('resultsBody');
+  const visible = getVisible();
+  const start = S.page * S.pageSize;
+  tbody.innerHTML = '';
+  for (const r of visible.slice(start, start + S.pageSize)) tbody.appendChild(makeRow(r));
+  refreshPagination(visible.length);
+}
+
+function renderRow(idx) {
+  const row = document.getElementById(`row-${idx}`);
+  if (!row) { renderAllRows(); return; }
+  row.replaceWith(makeRow(S.results[idx]));
+}
+
+const STATUS_ORDER = { malicious: 0, suspicious: 1, error: 2, scanning: 3, pending: 4, clean: 5 };
+
+function getVisible() {
+  let list = [...S.results];
+  if (S.filter !== 'all') list = list.filter(r => r.status === S.filter);
+  if (S.search) list = list.filter(r => r.ip.includes(S.search));
+  if (S.minAbuse > 0) list = list.filter(r => (r.abuse?.score ?? 0) >= S.minAbuse);
+  list.sort((a, b) => {
+    let va, vb;
+    switch (S.sortKey) {
+      case 'idx': va = a.idx; vb = b.idx; break;
+      case 'vtMal': va = a.vt?.mal ?? -1; vb = b.vt?.mal ?? -1; break;
+      case 'abuseScore': va = a.abuse?.score ?? -1; vb = b.abuse?.score ?? -1; break;
+      case 'talos': va = a.talos?.rep || ''; vb = b.talos?.rep || ''; break;
+      case 'domain': va = (isDomain(a.ip) ? a.ip : a.rdns) || ''; vb = (isDomain(b.ip) ? b.ip : b.rdns) || ''; break;
+      case 'country': va = a.vt?.country || a.abuse?.country || ''; vb = b.vt?.country || b.abuse?.country || ''; break;
+      case 'status': va = STATUS_ORDER[a.status] ?? 9; vb = STATUS_ORDER[b.status] ?? 9; break;
+      default: va = 0; vb = 0;
+    }
+    return va < vb ? -S.sortDir : va > vb ? S.sortDir : 0;
+  });
+  return list;
+}
+
+function makeRow(r) {
+  const tr = document.createElement('tr');
+  tr.id = `row-${r.idx}`;
+  const vt = r.vt || {}, ab = r.abuse || {}, tl = r.talos || {};
+
+  // VT Score
+  let vtCell;
+  if (r.status === 'scanning' && S.svc.vt && vt.mal === undefined && !vt.err) vtCell = `<span class="spinner"></span>`;
+  else if (vt.err) vtCell = errCell(vt.err);
+  else if (!S.svc.vt) vtCell = dash();
+  else if (vt.missing) vtCell = `<span style="color:var(--text-dim);font-size:0.7rem">Not found</span>`;
+  else if (vt.mal !== undefined) {
+    const pct = vt.tot ? Math.round(vt.mal / vt.tot * 100) : 0;
+    const c = vt.mal >= 3 ? '#f87171' : vt.mal >= 1 ? '#fbbf24' : '#34d399';
+    vtCell = `<div class="score-wrap"><span style="color:${c};font-weight:700">${vt.mal}/${vt.tot}</span><div class="score-bar"><div class="score-fill" style="width:${pct}%;background:${c}"></div></div></div>`;
+  } else vtCell = dash();
+
+  // Abuse Score
+  let abuseCell;
+  if (ab.skip || !S.svc.abuse) abuseCell = dash();
+  else if (ab.err) abuseCell = errCell(ab.err);
+  else if (r.status === 'scanning' && r.abuse === null) abuseCell = `<span class="spinner"></span>`;
+  else if (ab.score !== undefined && ab.score !== null) {
+    const c = ab.score >= 75 ? '#f87171' : ab.score >= 25 ? '#fbbf24' : '#34d399';
+    abuseCell = `<div class="score-wrap"><span style="color:${c};font-weight:700">${ab.score}%</span><div class="score-bar"><div class="score-fill" style="width:${ab.score}%;background:${c}"></div></div></div>`;
+  } else abuseCell = dash();
+
+  // Talos / GreyNoise cell
+  const talosLookup = tl.talosLink || `https://talosintelligence.com/reputation_center/lookup?search=${r.ip}`;
+  const gnLookup   = tl.gnLink || `https://viz.greynoise.io/ip/${r.ip}`;
+  let talosCell;
+  if (r.status === 'scanning' && S.svc.talos && r.talos === null) {
+    talosCell = `<span class="spinner"></span>`;
+  } else if (!S.svc.talos) {
+    talosCell = dash();
+  } else if (tl.rep) {
+    const colorMap = { green: '#34d399', red: '#f87171', yellow: '#fbbf24', muted: 'var(--text-muted)' };
+    let c = colorMap[tl.color] || 'var(--text-muted)';
+    if (!tl.color) {
+      const low = tl.rep.toLowerCase();
+      c = (low.includes('poor') || low.includes('untrust') || low.includes('malici') || low.includes('bad') || low.includes('high'))
+        ? '#f87171'
+        : (low.includes('unfavor') || low.includes('neutral') || low.includes('unknown') || low.includes('moderate') || low.includes('scanner'))
+          ? '#fbbf24' : '#34d399';
+    }
+    const viewLink = tl.src === 'gn' ? gnLookup : talosLookup;
+    const srcTag = tl.src === 'gn'
+      ? `<span style="font-size:0.58rem;opacity:0.5;margin-left:3px">GN</span>`
+      : `<span style="font-size:0.58rem;opacity:0.5;margin-left:3px">Talos</span>`;
+    const noiseTag = tl.noise
+      ? `<span style="font-size:0.6rem;color:#fbbf24;margin-left:4px" title="Active scanner">⚡</span>` : '';
+    const riotTag = tl.riot
+      ? `<span style="font-size:0.6rem;color:#34d399;margin-left:3px" title="Common trusted service">✓</span>` : '';
+    talosCell = `<a href="${viewLink}" target="_blank" style="color:${c};font-weight:700;text-decoration:none;display:inline-flex;align-items:center;gap:2px">
+      ${tl.rep}${noiseTag}${riotTag}${srcTag}</a>`;
+  } else if (isIP(r.ip)) {
+    talosCell = `<a href="${gnLookup}" target="_blank" class="link-btn" style="color:#a78bfa;border-color:rgba(139,92,246,0.25);background:rgba(139,92,246,0.06)">↗ GreyNoise</a>`;
+  } else {
+    talosCell = `<a href="${talosLookup}" target="_blank" class="link-btn" style="color:#60a5fa;border-color:rgba(59,130,246,0.25);background:rgba(59,130,246,0.06)">↗ Talos</a>`;
+  }
+
+  const country = vt.country || ab.country || '—';
+  const badges = { pending: 'badge-pending', scanning: 'badge-scanning', clean: 'badge-clean', suspicious: 'badge-suspicious', malicious: 'badge-malicious', error: 'badge-error' };
+  const icons  = { pending: '○', scanning: '◎', clean: '✓', suspicious: '⚠', malicious: '✕', error: '!' };
+  const badge = `<span class="badge ${badges[r.status] || ''}">${icons[r.status] || ''} ${r.status}</span>`;
+
+  const vtPath = isIP(r.ip) ? 'ip-address' : 'domain';
+  const links = `<div style="display:flex;gap:3px">
+    <a href="https://www.virustotal.com/gui/${vtPath}/${r.ip}" target="_blank" class="link-btn">VT</a>
+    <a href="https://www.abuseipdb.com/check/${r.ip}" target="_blank" class="link-btn">Abuse</a>
+    <a href="https://talosintelligence.com/reputation_center/lookup?search=${r.ip}" target="_blank" class="link-btn">Talos</a>
+  </div>`;
+
+  const typeBadge = isIP(r.ip)
+    ? `<span style="font-size:0.58rem;color:var(--text-dim);background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:3px;padding:0 4px;margin-right:4px;vertical-align:middle">IP</span>`
+    : `<span style="font-size:0.58rem;color:#a78bfa;background:rgba(139,92,246,0.08);border:1px solid rgba(139,92,246,0.2);border-radius:3px;padding:0 4px;margin-right:4px;vertical-align:middle">DOM</span>`;
+
+  const resolvedLine = r.resolvedIP
+    ? `<div style="color:var(--text-dim);font-size:0.62rem;margin-top:2px">→ ${r.resolvedIP}</div>` : '';
+
+  // Domain / rDNS cell — priority: AbuseIPDB domain > rDNS > dash
+  let domainCell;
+  if (isDomain(r.ip)) {
+    domainCell = `<span style="color:#a78bfa;font-size:0.75rem">${r.ip}</span>`;
+  } else {
+    const abDomain = ab.domain || null;
+    const rdnsHost = r.rdns || null;
+    const best     = abDomain || rdnsHost;
+    if (best) {
+      const label = best.length > 34 ? best.slice(0, 32) + '…' : best;
+      const src   = abDomain
+        ? `<span style="font-size:0.58rem;color:var(--text-dim);margin-left:4px">AbuseIPDB</span>`
+        : `<span style="font-size:0.58rem;color:var(--text-dim);margin-left:4px">rDNS</span>`;
+      domainCell  = `<span style="font-size:0.73rem;color:var(--text-muted)" title="${best}">${label}</span>${src}`;
+    } else if (r.status === 'scanning' && IS_LOCAL) {
+      domainCell = `<span class="spinner"></span>`;
+    } else {
+      domainCell = dash();
+    }
+  }
+
+  tr.innerHTML = `
+    <td class="mono">
+      <span style="color:var(--text-dim);font-size:0.65rem;margin-right:5px">${r.idx + 1}</span>${typeBadge}${r.ip}${resolvedLine}
+    </td>
+    <td>${domainCell}</td>
+    <td>${vtCell}</td>
+    <td>${abuseCell}</td>
+    <td>${talosCell}</td>
+    <td style="font-size:0.73rem;color:var(--text-muted)">${country}</td>
+    <td>${badge}</td>
+    <td>${links}</td>
+  `;
+  return tr;
+}
+
+const dash = () => `<span style="color:var(--text-dim)">—</span>`;
+const errCell = msg => `<span style="color:#f87171;font-size:0.68rem;opacity:0.85;cursor:help" title="${esc(msg)}">⚠ ${msg.length > 18 ? msg.slice(0,18)+'…' : msg}</span>`;
+
+function refreshStats() {
+  const c = { clean: 0, suspicious: 0, malicious: 0, error: 0 };
+  for (const r of S.results) if (r.status in c) c[r.status]++;
+  animNum('sClean', c.clean); animNum('sSus', c.suspicious);
+  animNum('sMal', c.malicious); animNum('sErr', c.error);
+  animNum('sTotal', S.results.length);
+}
+
+function animNum(id, val) {
+  const el = document.getElementById(id);
+  if (el && el.textContent !== String(val)) {
+    el.textContent = val;
+    el.style.transform = 'scale(1.15)';
+    setTimeout(() => el.style.transform = '', 180);
+  }
+}
+
+function refreshProgress(done = false) {
+  const pct = S.total ? Math.round(S.processed / S.total * 100) : 0;
+  document.getElementById('progressFill').style.width = pct + '%';
+  document.getElementById('progressText').textContent = `${S.processed} / ${S.total}  (${pct}%)`;
+  if (S.startTime && S.processed > 0) {
+    const elapsed = (Date.now() - S.startTime) / 1000;
+    const rate = S.processed / elapsed;
+    const left = (S.total - S.processed) / rate;
+    document.getElementById('rateEl').textContent = `${rate.toFixed(1)} IPs/sec`;
+    document.getElementById('etaText').textContent = done ? '✓ Complete!' : S.processed < S.total ? `ETA ${left > 60 ? Math.round(left/60)+'m' : Math.round(left)+'s'}` : '';
+  }
+  renderAllRows();
+}
+
+function refreshPagination(total) {
+  const pages = Math.ceil(total / S.pageSize);
+  const s = S.page * S.pageSize;
+  const e = Math.min(s + S.pageSize, total);
+  document.getElementById('pageInfo').textContent = total ? `Showing ${s+1}–${e} of ${total}` : 'No results';
+  const ctrl = document.getElementById('pageBtns');
+  ctrl.innerHTML = '';
+  if (pages <= 1) return;
+  const btn = (label, pg, dis) => {
+    const b = document.createElement('button');
+    b.className = 'btn btn-ghost btn-sm' + (pg === S.page ? ' btn-primary' : '');
+    b.style.minWidth = '30px'; b.textContent = label; b.disabled = dis;
+    b.onclick = () => { S.page = pg; renderAllRows(); };
+    return b;
+  };
+  ctrl.appendChild(btn('«', 0, S.page === 0));
+  ctrl.appendChild(btn('‹', S.page-1, S.page === 0));
+  const lo = Math.max(0, Math.min(S.page-2, pages-5));
+  for (let p = lo; p < Math.min(lo+5, pages); p++) ctrl.appendChild(btn(p+1, p));
+  ctrl.appendChild(btn('›', S.page+1, S.page >= pages-1));
+  ctrl.appendChild(btn('»', pages-1, S.page >= pages-1));
+}
+
+function refreshKeyStatus() {
+  const vtC = vtKM?.count() || S.keys.vt.filter(k=>k).length;
+  const abuseC = abuseKM?.count() || S.keys.abuse.filter(k=>k).length;
+  const vtL = vtKM?.limitedCount() || 0;
+  const abuseL = abuseKM?.limitedCount() || 0;
+  const parts = [];
+  if (vtC) parts.push(`VT: ${vtC-vtL}/${vtC} active`);
+  if (abuseC) parts.push(`Abuse: ${abuseC-abuseL}/${abuseC} active`);
+  const txt = parts.join(' · ') || 'No keys configured';
+  document.getElementById('apiStatusMeta').textContent = txt;
+  document.getElementById('keyStatusInline').textContent = parts.join(' · ');
+}
+
+// ── Key UI ──
+function renderKeys() {
+  buildKeys('vt-keys', 'vt');
+  buildKeys('abuse-keys', 'abuse');
+  refreshKeyStatus();
+}
+
+function buildKeys(id, svc) {
+  const el = document.getElementById(id);
+  el.innerHTML = '';
+  for (let i = 0; i < 4; i++) {
+    const val = S.keys[svc][i] || '';
+    const d = document.createElement('div');
+    d.className = 'key-row';
+    d.innerHTML = `
+      <span class="key-num">${i+1}</span>
+      <span class="key-status ${val.trim() ? 'key-filled' : 'key-empty'}" id="ks-${svc}-${i}"></span>
+      <input type="password" class="key-input" id="k-${svc}-${i}"
+        placeholder="Paste API key…" value="${esc(val)}"
+        oninput="updateKey('${svc}',${i},this.value)">
+      <button class="icon-btn" onclick="toggleVis('${svc}',${i})" title="Show/hide">👁</button>
+      <button class="icon-btn danger" onclick="clearKey('${svc}',${i})" title="Clear">✕</button>
+    `;
+    el.appendChild(d);
+  }
+}
+
+function updateKey(svc, i, val) {
+  S.keys[svc][i] = val;
+  const dot = document.getElementById(`ks-${svc}-${i}`);
+  if (dot) dot.className = 'key-status ' + (val.trim() ? 'key-filled' : 'key-empty');
+  saveSettings(); refreshKeyStatus(); flashSaved();
+}
+
+function flashSaved() {
+  const el = document.getElementById('savedPulse');
+  if (!el) return;
+  el.style.display = 'inline';
+  clearTimeout(flashSaved._t);
+  flashSaved._t = setTimeout(() => { el.style.display = 'none'; }, 2000);
+}
+
+function clearKey(svc, i) {
+  S.keys[svc][i] = '';
+  const el = document.getElementById(`k-${svc}-${i}`);
+  if (el) el.value = '';
+  updateKey(svc, i, '');
+}
+
+function toggleVis(svc, i) {
+  const el = document.getElementById(`k-${svc}-${i}`);
+  if (el) el.type = el.type === 'password' ? 'text' : 'password';
+}
+
+function toggleAllKeys() {
+  S.showKeys = !S.showKeys;
+  ['vt','abuse'].forEach(svc => {
+    for (let i = 0; i < 4; i++) {
+      const el = document.getElementById(`k-${svc}-${i}`);
+      if (el) el.type = S.showKeys ? 'text' : 'password';
+    }
+  });
+}
+
+function clearApiKeys() {
+  if (!confirm('Clear all API keys from localStorage?')) return;
+  S.keys = { vt: ['','','',''], abuse: ['','','',''] };
+  renderKeys(); saveSettings();
+}
+
+// ── CSV ──
+let csvRows = null;
+
+function handleCSVUpload(ev) {
+  const file = ev.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    const lines = e.target.result.split('\n').filter(l => l.trim());
+    csvRows = lines.map(l => l.split(/[,;\t]/));
+    const header = csvRows[0] || [];
+    let best = 0;
+    for (let c = 0; c < header.length; c++) { if (/ip|address|host/i.test(header[c])) { best = c; break; } }
+    const sel = document.getElementById('csvColumn');
+    sel.innerHTML = '<option value="auto">Auto</option>';
+    header.forEach((h, i) => {
+      const o = document.createElement('option');
+      o.value = i; o.textContent = `Col ${i+1}: ${h.trim().slice(0,20)}`;
+      if (i === best) o.selected = true;
+      sel.appendChild(o);
+    });
+    document.getElementById('csvSelector').classList.add('show');
+    applyCSVColumn(best);
+    notify('success', `CSV loaded: ${lines.length} rows`);
+  };
+  reader.readAsText(file);
+  ev.target.value = '';
+}
+
+function applyCSVColumn(force) {
+  if (!csvRows) return;
+  const sel = document.getElementById('csvColumn');
+  const col = force !== undefined ? force : (sel.value === 'auto' ? 0 : parseInt(sel.value));
+  const ips = csvRows.map(r => (r[col] || '').trim().replace(/['"]/g, '')).filter(isTarget);
+  document.getElementById('ipInput').value = [...new Set(ips)].join('\n');
+  updateIPCount();
+  notify('info', `${ips.length} IPs from CSV column`);
+}
+
+function updateIPCount() {
+  const all = parseIPs(document.getElementById('ipInput').value);
+  const badge = document.getElementById('ipCountBadge');
+  if (!all.length) { badge.textContent = ''; badge.style.display = 'none'; return; }
+  const unique = new Set(all).size;
+  badge.textContent = all.length === unique
+    ? `${all.length.toLocaleString()} IPs`
+    : `${all.length.toLocaleString()} total · ${unique.toLocaleString()} unique`;
+  badge.style.display = 'inline-flex';
+}
+
+function clearIPs() {
+  document.getElementById('ipInput').value = '';
+  document.getElementById('csvSelector').classList.remove('show');
+  csvRows = null; updateIPCount();
+}
+
+function deduplicateIPs() {
+  const all = parseIPs(document.getElementById('ipInput').value);
+  const unique = [...new Set(all)];
+  document.getElementById('ipInput').value = unique.join('\n');
+  const removed = all.length - unique.length;
+  updateIPCount();
+  notify('success', removed > 0 ? `${unique.length.toLocaleString()} unique IPs — removed ${removed.toLocaleString()} duplicates` : `${unique.length.toLocaleString()} unique IPs`);
+}
+
+function loadSamples() {
+  document.getElementById('ipInput').value = ['1.1.1.1','8.8.8.8','8.8.4.4','9.9.9.9','185.220.101.45','103.21.244.0','91.108.4.0','195.54.160.149','virustotal.com','abuseipdb.com'].join('\n');
+  updateIPCount();
+}
+
+// ── Export ──
+function exportCSV() {
+  const cols = ['Target','Resolved_IP','Domain','Status','VT_Mal','VT_Sus','VT_Total','VT_Country','VT_ASOwner','VT_Cats','Abuse_Score','Abuse_Domain','Abuse_Country','Abuse_ISP','Abuse_Usage','GN_Classification','GN_Noise','GN_Link','Talos_Link'];
+  const rows = S.results.map(r => {
+    const vt = r.vt||{}, ab = r.abuse||{}, tl = r.talos||{};
+    const domainVal = isDomain(r.ip) ? r.ip : (ab.domain || r.rdns || '');
+    return [r.ip, r.resolvedIP??'', domainVal, r.status, vt.mal??'', vt.sus??'', vt.tot??'', vt.country??'', vt.asOwner??'', vt.cats??'', ab.score??'', ab.domain??'', ab.country??'', ab.isp??'', ab.usage??'', tl.rep??'', tl.noise??'', tl.gnLink??'', tl.talosLink??'']
+      .map(v => `"${String(v).replace(/"/g,'""')}"`).join(',');
+  });
+  dl('ip-scan.csv', [cols.join(','), ...rows].join('\r\n'), 'text/csv');
+}
+
+function exportJSON() { dl('ip-scan.json', JSON.stringify(S.results, null, 2), 'application/json'); }
+
+function dl(name, content, type) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([content], { type }));
+  a.download = name; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+function copyVisible() {
+  const ips = getVisible().map(r => r.ip).join('\n');
+  navigator.clipboard.writeText(ips).then(() => notify('success', `${getVisible().length} IPs copied to clipboard`));
+}
+
+// ── Sort / Filter ──
+function sortBy(key) {
+  document.querySelectorAll('thead th').forEach(th => th.classList.remove('sorted'));
+  const thId = `th-${key}`;
+  const th = document.getElementById(thId);
+  if (th) th.classList.add('sorted');
+  if (S.sortKey === key) S.sortDir *= -1; else { S.sortKey = key; S.sortDir = 1; }
+  S.page = 0; renderAllRows();
+}
+
+function setFilter(f, el) {
+  S.filter = f; S.page = 0;
+  document.querySelectorAll('.filter-tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  renderAllRows();
+}
+
+function updateSearch() {
+  S.search = document.getElementById('searchInput').value.trim();
+  S.page = 0; renderAllRows();
+}
+
+function updateMinAbuse() {
+  const v = parseInt(document.getElementById('minAbuseInput').value) || 0;
+  S.minAbuse = Math.max(0, Math.min(100, v));
+  S.page = 0; renderAllRows();
+}
+
+// ── Settings ──
+function saveSettings() {
+  S.concurrency = parseInt(document.getElementById('concurrency').value);
+  S.vtDelay = parseInt(document.getElementById('vtDelay').value) || 15000;
+  S.corsProxy = document.getElementById('corsProxy').value;
+  S.svc.vt = document.getElementById('svcVT').checked;
+  S.svc.abuse = document.getElementById('svcAbuse').checked;
+  S.svc.talos = document.getElementById('svcTalos').checked;
+  try {
+    localStorage.setItem('ipscn', JSON.stringify({ keys: S.keys, concurrency: S.concurrency, vtDelay: S.vtDelay, corsProxy: S.corsProxy, svc: S.svc }));
+  } catch {}
+}
+
+function loadSettings() {
+  try {
+    const d = JSON.parse(localStorage.getItem('ipscn') || '{}');
+    if (d.keys) {
+      S.keys.vt = (d.keys.vt || ['','','','']).slice(0,4).concat(['','','','']).slice(0,4);
+      S.keys.abuse = (d.keys.abuse || ['','','','']).slice(0,4).concat(['','','','']).slice(0,4);
+    }
+    if (d.concurrency) { S.concurrency = d.concurrency; document.getElementById('concurrency').value = d.concurrency; }
+    if (d.vtDelay) { S.vtDelay = d.vtDelay; document.getElementById('vtDelay').value = d.vtDelay; }
+    const proxyVal = d.corsProxy || 'https://corsproxy.io/?';
+    S.corsProxy = proxyVal; document.getElementById('corsProxy').value = proxyVal;
+    if (d.svc) {
+      S.svc = { ...S.svc, ...d.svc };
+      document.getElementById('svcVT').checked    = S.svc.vt;
+      document.getElementById('svcAbuse').checked  = S.svc.abuse;
+      document.getElementById('svcTalos').checked  = S.svc.talos;
+      updateSvcToggle('vt'); updateSvcToggle('abuse'); updateSvcToggle('talos');
+    }
+  } catch {}
+}
+
+function updateSvcToggle(svc) {
+  const map = { abuse: 'lbl-abuse', talos: 'lbl-talos' };
+  const checked = document.getElementById(`svc${svc.charAt(0).toUpperCase()+svc.slice(1)}`).checked;
+  const lbl = document.getElementById(map[svc]);
+  if (lbl) lbl.classList.toggle('active', checked);
+  if (svc === 'vt') {
+    const btn  = document.getElementById('btnVT');
+    const lbl2 = document.getElementById('vtBtnLabel');
+    const cb   = document.getElementById('svcVT');
+    if (btn) {
+      btn.style.borderColor  = checked ? 'rgba(99,102,241,0.75)' : 'rgba(99,102,241,0.3)';
+      btn.style.background   = checked ? 'rgba(99,102,241,0.18)' : 'rgba(99,102,241,0.06)';
+      btn.style.color        = checked ? '#a78bfa' : '#94a3b8';
+    }
+    if (cb) cb.style.background = checked ? '#6366f1' : 'transparent';
+    if (lbl2) lbl2.textContent = checked ? 'VirusTotal ON' : 'Include VirusTotal';
+  }
+  saveSettings();
+}
+
+// ── UI Helpers ──
+let apiOpen = false;
+
+function toggleAPI() {
+  apiOpen = !apiOpen;
+  const body = document.getElementById('apiBody');
+  const chevron = document.getElementById('apiChevron');
+  body.classList.toggle('closed', !apiOpen);
+  chevron.classList.toggle('open', apiOpen);
+}
+
+let isDark = true;
+function toggleTheme() {
+  isDark = !isDark;
+  const r = document.documentElement.style;
+  if (!isDark) {
+    r.setProperty('--bg', '#f1f5f9');
+    r.setProperty('--bg2', '#e2e8f0');
+    r.setProperty('--surface', 'rgba(0,0,0,0.03)');
+    r.setProperty('--surface-hover', 'rgba(0,0,0,0.06)');
+    r.setProperty('--border', 'rgba(0,0,0,0.1)');
+    r.setProperty('--border-bright', 'rgba(0,0,0,0.2)');
+    r.setProperty('--text', '#0f172a');
+    r.setProperty('--text-muted', '#64748b');
+    r.setProperty('--text-dim', '#94a3b8');
+    document.getElementById('themeBtn').textContent = '🌙 Dark';
+  } else {
+    r.setProperty('--bg', '#080c14');
+    r.setProperty('--bg2', '#0d1220');
+    r.setProperty('--surface', 'rgba(255,255,255,0.035)');
+    r.setProperty('--surface-hover', 'rgba(255,255,255,0.06)');
+    r.setProperty('--border', 'rgba(255,255,255,0.08)');
+    r.setProperty('--border-bright', 'rgba(255,255,255,0.15)');
+    r.setProperty('--text', '#e2e8f0');
+    r.setProperty('--text-muted', '#64748b');
+    r.setProperty('--text-dim', '#334155');
+    document.getElementById('themeBtn').textContent = '☀ Light';
+  }
+}
+
+function resetAll() {
+  if (S.scanning && !confirm('Stop scan and reset?')) return;
+  if (S.scanning) stopScan();
+  S.results = [];
+  hide('progressSection'); hide('statsRow'); hide('resultsCard');
+  document.getElementById('btnCSV').disabled = true;
+  document.getElementById('btnJSON').disabled = true;
+  clearIPs();
+}
+
+function show(id) { const el = document.getElementById(id); if (el) { el.style.display = ''; el.classList.add('show'); } }
+function hide(id) { const el = document.getElementById(id); if (el) { el.style.display = 'none'; el.classList.remove('show'); } }
+
+function notify(type, msg) {
+  const el = document.createElement('div');
+  const icons = { info: 'ℹ', success: '✓', error: '✕', warn: '⚠' };
+  el.className = `notif notif-${type}`;
+  el.innerHTML = `<span style="font-size:0.85rem;flex-shrink:0">${icons[type]||'ℹ'}</span><span>${msg}</span>`;
+  document.getElementById('notifStack').appendChild(el);
+  setTimeout(() => {
+    el.style.transition = 'opacity 0.35s, transform 0.35s';
+    el.style.opacity = '0'; el.style.transform = 'translateX(110%)';
+    setTimeout(() => el.remove(), 350);
+  }, 4000);
+}
+
+function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+// ── Init ──
+document.addEventListener('DOMContentLoaded', () => {
+  loadSettings();
+  renderKeys();
+  updateIPCount();
+  vtKM = new KeyManager(S.keys.vt);
+  abuseKM = new KeyManager(S.keys.abuse);
+  refreshKeyStatus();
+
+  if (IS_LOCAL) {
+    notify('success', '🟢 Proxy mode — AbuseIPDB & Talos live via server.js');
+  } else {
+    notify('info', 'ℹ️ Run  node server.js  then open localhost:3000 for full live results');
+  }
+});
+</script>
+</body>
+</html>

@@ -44,7 +44,7 @@ http.createServer(async (request, response) => {
   const origin = request.headers['origin'] || '';
   const allowed = !origin || origin.includes('localhost') || origin.includes('127.0.0.1') || origin.includes('github.io');
   response.setHeader('Access-Control-Allow-Origin', allowed ? origin || '*' : '');
-  response.setHeader('Access-Control-Allow-Headers', 'Content-Type,x-abuse-key');
+  response.setHeader('Access-Control-Allow-Headers', 'Content-Type,x-abuse-key,x-vt-key');
   if (request.method === 'OPTIONS') { response.writeHead(204); response.end(); return; }
 
   const send = (code, body, ct = 'application/json') => {

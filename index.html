@@ -1200,7 +1200,18 @@ function parseIPs(raw) {
 // ── API Calls ──
 async function vtFetch(target, key) {
   const type = isIP(target) ? 'ip_addresses' : 'domains';
-  const r = await fetch(`https://www.virustotal.com/api/v3/${type}/${target}`, { headers: { 'x-apikey': key } });
+  const vtDirect = `https://www.virustotal.com/api/v3/${type}/${target}`;
+
+  let r;
+  try {
+    // Try direct first (works on localhost; VT may allow CORS with valid key)
+    r = await fetch(vtDirect, { headers: { 'x-apikey': key } });
+  } catch {
+    // CORS blocked — route through allorigins.win (VT v2-style apikey param)
+    const proxied = `https://api.allorigins.win/raw?url=${encodeURIComponent(vtDirect + '?apikey=' + encodeURIComponent(key))}`;
+    r = await fetch(proxied);
+  }
+
   if (r.status === 429) { const w = parseInt(r.headers.get('X-RateLimit-Backoff') || '60') * 1000; throw { T: 'RL', key, wait: w }; }
   if (r.status === 404) return { missing: true };
   if (!r.ok) throw { T: 'ERR', msg: `VT HTTP ${r.status}` };
@@ -1216,8 +1227,11 @@ async function abuseFetch(ip, key) {
   if (IS_LOCAL) {
     r = await fetch(`/api/abuseipdb?ip=${encodeURIComponent(ip)}`, { headers: { 'x-abuse-key': key } });
   } else {
-    r = await fetch(`https://api.abuseipdb.com/api/v2/check?ipAddress=${encodeURIComponent(ip)}&maxAgeInDays=90`, { headers: { 'Key': key, 'Accept': 'application/json' } });
-    if (!r.ok && (r.status === 0 || r.type === 'opaque')) throw { T: 'CORS' };
+    // AbuseIPDB has no CORS — proxy via allorigins.win with key in URL
+    const abuseUrl = `https://api.abuseipdb.com/api/v2/check?ipAddress=${encodeURIComponent(ip)}&maxAgeInDays=90&key=${encodeURIComponent(key)}`;
+    try {
+      r = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(abuseUrl)}`);
+    } catch { throw { T: 'ERR', msg: 'Network error' }; }
   }
   if (r.status === 429) throw { T: 'RL', key, wait: 86400000 };
   if (r.status === 422) throw { T: 'SKIP' }; // invalid/private IP — AbuseIPDB can't check it

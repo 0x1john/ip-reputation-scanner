@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: ip-scanner-proxy
+    runtime: node
+    buildCommand: echo "no build"
+    startCommand: node server.js
+    envVars:
+      - key: PORT
+        value: 3000

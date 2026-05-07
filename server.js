@@ -41,7 +41,9 @@ function talosLabel(mnemonic) {
 http.createServer(async (request, response) => {
   const u = new URL(request.url, `http://localhost:${PORT}`);
 
-  response.setHeader('Access-Control-Allow-Origin', '*');
+  const origin = request.headers['origin'] || '';
+  const allowed = !origin || origin.includes('localhost') || origin.includes('127.0.0.1') || origin.includes('github.io');
+  response.setHeader('Access-Control-Allow-Origin', allowed ? origin || '*' : '');
   response.setHeader('Access-Control-Allow-Headers', 'Content-Type,x-abuse-key');
   if (request.method === 'OPTIONS') { response.writeHead(204); response.end(); return; }
 
@@ -88,6 +90,24 @@ http.createServer(async (request, response) => {
       if (err || !hostnames || !hostnames.length) return send(200, JSON.stringify({ ip, hostname: null }));
       send(200, JSON.stringify({ ip, hostname: hostnames[0].replace(/\.$/, '') }));
     });
+    return;
+  }
+
+  // ── VirusTotal proxy ──
+  if (u.pathname === '/api/vt') {
+    const target = u.searchParams.get('target');
+    const key    = request.headers['x-vt-key'];
+    if (!target || !key) return send(400, { error: 'Missing target or key' });
+    const type = /^(\d{1,3}\.){3}\d{1,3}$/.test(target) || target.includes(':') ? 'ip_addresses' : 'domains';
+    try {
+      const r = await req({
+        hostname: 'www.virustotal.com',
+        path: `/api/v3/${type}/${encodeURIComponent(target)}`,
+        method: 'GET',
+        headers: { 'x-apikey': key, 'Accept': 'application/json' },
+      });
+      send(r.status, r.text);
+    } catch (e) { send(502, { error: e.message }); }
     return;
   }
 
@@ -158,7 +178,7 @@ http.createServer(async (request, response) => {
 
   send(404, { error: 'Not found' });
 
-}).listen(PORT, '127.0.0.1', () => {
+}).listen(PORT, '0.0.0.0', () => {
   const line = '─'.repeat(51);
   console.log(`\n┌${line}┐`);
   console.log(`│   🔍  IP Reputation Scanner — Proxy Server         │`);

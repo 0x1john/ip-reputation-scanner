@@ -927,10 +927,10 @@ td.mono { font-family: 'SF Mono', 'Cascadia Code', 'Courier New', monospace; fon
           <span class="api-limit-badge">No key needed</span>
         </div>
         <div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:10px;line-height:1.5;padding:8px 10px;background:rgba(0,0,0,0.2);border-radius:8px;border:1px solid var(--border)">
-          Talos has no public API — direct lookup links are provided per IP. Add a CORS proxy below to attempt live reputation fetching.
+          For live use on GitHub Pages, deploy <strong style="color:var(--text)">server.js</strong> to <a href="https://render.com" target="_blank" style="color:#60a5fa">Render.com</a> (free) and paste the URL below. All APIs (VT, AbuseIPDB, Talos) will route through it.
         </div>
-        <label class="ctrl-label" style="display:block;margin-bottom:5px">CORS Proxy URL <span style="color:var(--text-dim)">(optional)</span></label>
-        <input type="text" class="key-input" id="corsProxy" placeholder="e.g. https://corsproxy.io/?" oninput="saveSettings()" style="width:100%;font-family:'Segoe UI',sans-serif" value="https://corsproxy.io/?">
+        <label class="ctrl-label" style="display:block;margin-bottom:5px">Proxy Server URL <span style="color:var(--text-dim)">(e.g. https://ip-scanner-proxy.onrender.com)</span></label>
+        <input type="text" class="key-input" id="corsProxy" placeholder="https://your-proxy.onrender.com" oninput="saveSettings()" style="width:100%;font-family:'Segoe UI',sans-serif">
       </div>
 
     </div>
@@ -1198,20 +1198,22 @@ function parseIPs(raw) {
 }
 
 // ── API Calls ──
+function proxyBase() {
+  if (IS_LOCAL) return '';
+  return (S.corsProxy || '').trim().replace(/\/$/, '');
+}
+
 async function vtFetch(target, key) {
   const type = isIP(target) ? 'ip_addresses' : 'domains';
-  const vtDirect = `https://www.virustotal.com/api/v3/${type}/${target}`;
-
+  const base = proxyBase();
   let r;
-  try {
-    // Try direct first (works on localhost; VT may allow CORS with valid key)
-    r = await fetch(vtDirect, { headers: { 'x-apikey': key } });
-  } catch {
-    // CORS blocked — route through allorigins.win (VT v2-style apikey param)
-    const proxied = `https://api.allorigins.win/raw?url=${encodeURIComponent(vtDirect + '?apikey=' + encodeURIComponent(key))}`;
-    r = await fetch(proxied);
+  if (IS_LOCAL || base) {
+    const url  = base ? `${base}/api/vt?target=${encodeURIComponent(target)}` : `https://www.virustotal.com/api/v3/${type}/${target}`;
+    const hdrs = base ? { 'x-vt-key': key } : { 'x-apikey': key };
+    r = await fetch(url, { headers: hdrs });
+  } else {
+    throw { T: 'ERR', msg: 'Set Proxy URL in API Keys panel' };
   }
-
   if (r.status === 429) { const w = parseInt(r.headers.get('X-RateLimit-Backoff') || '60') * 1000; throw { T: 'RL', key, wait: w }; }
   if (r.status === 404) return { missing: true };
   if (!r.ok) throw { T: 'ERR', msg: `VT HTTP ${r.status}` };
@@ -1224,14 +1226,12 @@ async function vtFetch(target, key) {
 
 async function abuseFetch(ip, key) {
   let r;
-  if (IS_LOCAL) {
-    r = await fetch(`/api/abuseipdb?ip=${encodeURIComponent(ip)}`, { headers: { 'x-abuse-key': key } });
+  const base = proxyBase();
+  if (IS_LOCAL || base) {
+    const url = `${base}/api/abuseipdb?ip=${encodeURIComponent(ip)}`;
+    r = await fetch(url, { headers: { 'x-abuse-key': key } });
   } else {
-    // AbuseIPDB has no CORS — proxy via allorigins.win with key in URL
-    const abuseUrl = `https://api.abuseipdb.com/api/v2/check?ipAddress=${encodeURIComponent(ip)}&maxAgeInDays=90&key=${encodeURIComponent(key)}`;
-    try {
-      r = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(abuseUrl)}`);
-    } catch { throw { T: 'ERR', msg: 'Network error' }; }
+    throw { T: 'ERR', msg: 'Set Proxy URL in API Keys panel' };
   }
   if (r.status === 429) throw { T: 'RL', key, wait: 86400000 };
   if (r.status === 422) throw { T: 'SKIP' }; // invalid/private IP — AbuseIPDB can't check it
@@ -1270,10 +1270,10 @@ async function talosFetch(target) {
   const gnLink    = `https://viz.greynoise.io/ip/${target}`;
 
   if (isIP(target)) {
-    // Local: use node server proxy
-    if (IS_LOCAL) {
+    const base = proxyBase();
+    if (IS_LOCAL || base) {
       try {
-        const r = await fetch(`/api/talos?ip=${encodeURIComponent(target)}`);
+        const r = await fetch(`${base}/api/talos?ip=${encodeURIComponent(target)}`);
         if (r.ok) {
           const d = await r.json();
           if (d.threat_level) {
@@ -1282,23 +1282,9 @@ async function talosFetch(target) {
           }
         }
       } catch {}
-    } else {
-      // Live/GitHub Pages: use allorigins.win CORS proxy → Talos GET endpoint
-      try {
-        const talosUrl = `https://talosintelligence.com/cloud_intel/ip_reputation?ip=${encodeURIComponent(target)}`;
-        const r = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(talosUrl)}`);
-        if (r.ok) {
-          const d = await r.json();
-          const label = talosLabelFromMnemonic(d?.reputation?.threat_level_mnemonic);
-          if (label) return { rep: label, color: talosRepColor(label), talosLink, gnLink, src: 'talos' };
-        }
-      } catch {}
-    }
 
-    // Fallback: GreyNoise (local only — no CORS on live)
-    if (IS_LOCAL) {
       try {
-        const r = await fetch(`/api/greynoise?ip=${encodeURIComponent(target)}`);
+        const r = await fetch(`${base}/api/greynoise?ip=${encodeURIComponent(target)}`);
         if (r.ok) {
           const d = await r.json();
           if (d.message === 'Success' || d.classification) {
@@ -1976,8 +1962,8 @@ function loadSettings() {
     }
     if (d.concurrency) { S.concurrency = d.concurrency; document.getElementById('concurrency').value = d.concurrency; }
     if (d.vtDelay) { S.vtDelay = d.vtDelay; document.getElementById('vtDelay').value = d.vtDelay; }
-    const proxyVal = d.corsProxy || 'https://corsproxy.io/?';
-    S.corsProxy = proxyVal; document.getElementById('corsProxy').value = proxyVal;
+    S.corsProxy = d.corsProxy || '';
+    document.getElementById('corsProxy').value = S.corsProxy;
     if (d.svc) {
       S.svc = { ...S.svc, ...d.svc };
       document.getElementById('svcVT').checked    = S.svc.vt;

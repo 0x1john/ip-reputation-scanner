@@ -930,7 +930,7 @@ td.mono { font-family: 'SF Mono', 'Cascadia Code', 'Courier New', monospace; fon
           For live use on GitHub Pages, deploy <strong style="color:var(--text)">server.js</strong> to <a href="https://render.com" target="_blank" style="color:#60a5fa">Render.com</a> (free) and paste the URL below. All APIs (VT, AbuseIPDB, Talos) will route through it.
         </div>
         <label class="ctrl-label" style="display:block;margin-bottom:5px">Proxy Server URL <span style="color:var(--text-dim)">(e.g. https://ip-scanner-proxy.onrender.com)</span></label>
-        <input type="text" class="key-input" id="corsProxy" placeholder="https://your-proxy.onrender.com" oninput="saveSettings()" style="width:100%;font-family:'Segoe UI',sans-serif">
+        <input type="text" class="key-input" id="corsProxy" placeholder="https://your-proxy.onrender.com" oninput="saveSettings()" style="width:100%;font-family:'Segoe UI',sans-serif" value="https://ip-reputation-scanner-avl5.onrender.com">
       </div>
 
     </div>
@@ -1119,7 +1119,7 @@ const IS_LOCAL = location.hostname === 'localhost' || location.hostname === '127
 // ── State ──
 const S = {
   keys: { vt: ['','','',''], abuse: ['','','',''] },
-  corsProxy: '',
+  corsProxy: 'https://ip-reputation-scanner-avl5.onrender.com',
   results: [],
   scanning: false, paused: false, stopped: false,
   concurrency: 30, vtDelay: 15000,
@@ -1962,7 +1962,7 @@ function loadSettings() {
     }
     if (d.concurrency) { S.concurrency = d.concurrency; document.getElementById('concurrency').value = d.concurrency; }
     if (d.vtDelay) { S.vtDelay = d.vtDelay; document.getElementById('vtDelay').value = d.vtDelay; }
-    S.corsProxy = d.corsProxy || '';
+    S.corsProxy = d.corsProxy || 'https://ip-reputation-scanner-avl5.onrender.com';
     document.getElementById('corsProxy').value = S.corsProxy;
     if (d.svc) {
       S.svc = { ...S.svc, ...d.svc };

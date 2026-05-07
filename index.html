@@ -1237,12 +1237,26 @@ async function abuseFetch(ip, key) {
   return { score: d.abuseConfidenceScore ?? null, reports: d.totalReports ?? 0, country: d.countryCode || null, isp: d.isp || null, usage: d.usageType || null, domain: d.domain || null };
 }
 
+function talosRepColor(rep) {
+  const low = rep.toLowerCase();
+  return (low.includes('poor') || low.includes('untrust') || low.includes('malici') || low.includes('bad'))
+    ? 'red'
+    : (low.includes('unfavor') || low.includes('neutral') || low.includes('unknown') || low.includes('moderate'))
+      ? 'yellow' : 'green';
+}
+
+function talosLabelFromMnemonic(m) {
+  if (!m) return null;
+  const map = { favorable:'Favorable', neutral:'Neutral', unfavorable:'Unfavorable', untrusted:'Untrusted' };
+  return map[m.toLowerCase()] || (m[0].toUpperCase() + m.slice(1));
+}
+
 async function talosFetch(target) {
   const talosLink = `https://talosintelligence.com/reputation_center/lookup?search=${target}`;
   const gnLink    = `https://viz.greynoise.io/ip/${target}`;
 
   if (isIP(target)) {
-    // 1 — Try Talos first via server proxy (corsproxy.io)
+    // Local: use node server proxy
     if (IS_LOCAL) {
       try {
         const r = await fetch(`/api/talos?ip=${encodeURIComponent(target)}`);
@@ -1250,50 +1264,40 @@ async function talosFetch(target) {
           const d = await r.json();
           if (d.threat_level) {
             const rep = d.threat_level;
-            const low = rep.toLowerCase();
-            const color = (low.includes('poor') || low.includes('untrust') || low.includes('malici') || low.includes('bad') || low.includes('high'))
-              ? 'red'
-              : (low.includes('unfavor') || low.includes('neutral') || low.includes('unknown') || low.includes('moderate'))
-                ? 'yellow'
-                : 'green';
-            return { rep, color, talosLink, gnLink, src: 'talos' };
+            return { rep, color: talosRepColor(rep), talosLink, gnLink, src: 'talos' };
           }
         }
       } catch {}
+    } else {
+      // Live/GitHub Pages: use allorigins.win CORS proxy → Talos GET endpoint
+      try {
+        const talosUrl = `https://talosintelligence.com/cloud_intel/ip_reputation?ip=${encodeURIComponent(target)}`;
+        const r = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(talosUrl)}`);
+        if (r.ok) {
+          const d = await r.json();
+          const label = talosLabelFromMnemonic(d?.reputation?.threat_level_mnemonic);
+          if (label) return { rep: label, color: talosRepColor(label), talosLink, gnLink, src: 'talos' };
+        }
+      } catch {}
+    }
 
-      // 2 — Talos returned nothing: fall back to GreyNoise
+    // Fallback: GreyNoise (local only — no CORS on live)
+    if (IS_LOCAL) {
       try {
         const r = await fetch(`/api/greynoise?ip=${encodeURIComponent(target)}`);
         if (r.ok) {
           const d = await r.json();
           if (d.message === 'Success' || d.classification) {
             let rep, color;
-            if (d.riot)                               { rep = 'Trusted';   color = 'green';  }
-            else if (d.classification === 'benign')   { rep = 'Benign';    color = 'green';  }
-            else if (d.classification === 'malicious'){ rep = 'Malicious'; color = 'red';    }
-            else if (d.noise)                         { rep = 'Scanner';   color = 'yellow'; }
-            else                                      { rep = 'Unknown';   color = 'muted';  }
+            if (d.riot)                                { rep = 'Trusted';   color = 'green';  }
+            else if (d.classification === 'benign')    { rep = 'Benign';    color = 'green';  }
+            else if (d.classification === 'malicious') { rep = 'Malicious'; color = 'red';    }
+            else if (d.noise)                          { rep = 'Scanner';   color = 'yellow'; }
+            else                                       { rep = 'Unknown';   color = 'muted';  }
             return { rep, color, noise: d.noise, riot: d.riot, name: d.name || null, gnLink, talosLink, src: 'gn' };
           }
         }
       } catch {}
-    } else {
-      // Non-local: try Talos via user CORS proxy
-      const proxy = S.corsProxy.trim();
-      if (proxy) {
-        try {
-          const url = `https://talosintelligence.com/cloud_intel/ip_info_lookups`;
-          const r = await fetch(`${proxy}${encodeURIComponent(url)}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ip: target }),
-          });
-          if (r.ok) {
-            const d = await r.json();
-            if (d.threat_level) return { rep: d.threat_level, color: null, talosLink, gnLink, src: 'talos' };
-          }
-        } catch {}
-      }
     }
     return { rep: null, talosLink, gnLink, src: null };
   }

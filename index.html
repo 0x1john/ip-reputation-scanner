@@ -1207,13 +1207,9 @@ async function vtFetch(target, key) {
   const type = isIP(target) ? 'ip_addresses' : 'domains';
   const base = proxyBase();
   let r;
-  if (IS_LOCAL || base) {
-    const url  = base ? `${base}/api/vt?target=${encodeURIComponent(target)}` : `https://www.virustotal.com/api/v3/${type}/${target}`;
-    const hdrs = base ? { 'x-vt-key': key } : { 'x-apikey': key };
-    r = await fetch(url, { headers: hdrs });
-  } else {
-    throw { T: 'ERR', msg: 'Set Proxy URL in API Keys panel' };
-  }
+  const proxyUrl = base ? `${base}/api/vt?target=${encodeURIComponent(target)}` : IS_LOCAL ? `/api/vt?target=${encodeURIComponent(target)}` : null;
+  if (!proxyUrl) throw { T: 'ERR', msg: 'Set Proxy URL in API Keys panel' };
+  r = await fetch(proxyUrl, { headers: { 'x-vt-key': key } });
   if (r.status === 429) { const w = parseInt(r.headers.get('X-RateLimit-Backoff') || '60') * 1000; throw { T: 'RL', key, wait: w }; }
   if (r.status === 404) return { missing: true };
   if (!r.ok) throw { T: 'ERR', msg: `VT HTTP ${r.status}` };

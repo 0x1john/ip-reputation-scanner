@@ -1383,22 +1383,22 @@ async function runVTQueue(ips) {
       while (!res.done && !S.stopped) await sleep(80);
       if (S.stopped) break;
 
-      let tries = 0, done = false;
-      while (!done && tries <= vtKM.count()) {
+      let done = false;
+      while (!done && !S.stopped) {
+        while (!S.stopped && !vtKM.has()) await sleep(1000);
         if (S.stopped) return;
         const key = vtKM.getKey();
-        if (!key) { res.vt = { err: 'All keys rate-limited' }; done = true; break; }
+        if (!key) continue;
         try {
           await throttleVT(key);
           if (S.stopped) return;
           res.vt = await vtFetch(ip, key);
           done = true;
         } catch (e) {
-          if (e.T === 'RL') { vtKM.markLimited(key, e.wait || 60000); notify('warn', `VT key …${key.slice(-4)} rate-limited`); tries++; }
+          if (e.T === 'RL') { vtKM.markLimited(key, e.wait || 60000); notify('warn', `VT key …${key.slice(-4)} rate-limited, waiting…`); }
           else { res.vt = { err: e.msg || 'VT error' }; done = true; }
         }
       }
-      if (!done) res.vt = { err: 'All VT keys exhausted' };
 
       res.status = calcStatus(res);
       renderRow(idx);

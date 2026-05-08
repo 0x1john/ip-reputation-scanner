@@ -861,7 +861,6 @@ td.mono { font-family: 'SF Mono', 'Cascadia Code', 'Courier New', monospace; fon
     <div class="logo-sub">
       <span class="service-tag tag-vt">VirusTotal</span>
       <span class="service-tag tag-abuse">AbuseIPDB</span>
-      <span class="service-tag tag-talos">Cisco Talos</span>
     </div>
   </div>
   <div class="header-actions">
@@ -917,21 +916,7 @@ td.mono { font-family: 'SF Mono', 'Cascadia Code', 'Courier New', monospace; fon
         <div id="abuse-keys"></div>
       </div>
 
-      <!-- Cisco Talos -->
-      <div class="api-service-block">
-        <div class="api-service-head">
-          <div class="api-service-name" style="color:#60a5fa">
-            <span class="dot-indicator" style="background:#60a5fa;box-shadow:0 0 6px rgba(96,165,250,0.6)"></span>
-            Cisco Talos
-          </div>
-          <span class="api-limit-badge">No key needed</span>
-        </div>
-        <div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:10px;line-height:1.5;padding:8px 10px;background:rgba(0,0,0,0.2);border-radius:8px;border:1px solid var(--border)">
-          For live use on GitHub Pages, deploy <strong style="color:var(--text)">server.js</strong> to <a href="https://render.com" target="_blank" style="color:#60a5fa">Render.com</a> (free) and paste the URL below. All APIs (VT, AbuseIPDB, Talos) will route through it.
-        </div>
-        <label class="ctrl-label" style="display:block;margin-bottom:5px">Proxy Server URL <span style="color:var(--text-dim)">(e.g. https://ip-scanner-proxy.onrender.com)</span></label>
-        <input type="text" class="key-input" id="corsProxy" placeholder="https://your-proxy.onrender.com" oninput="saveSettings()" style="width:100%;font-family:'Segoe UI',sans-serif" value="https://ip-reputation-scanner-avl5.onrender.com">
-      </div>
+      <input type="hidden" id="corsProxy" value="https://ip-reputation-scanner-avl5.onrender.com">
 
     </div>
 

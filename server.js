@@ -8,6 +8,28 @@ const { URL } = require('url');
 
 const PORT = process.env.PORT || 3000;
 
+// ── CORS allowlist ────────────────────────────────────────────────────────
+// Add exact origins here, or set ALLOWED_ORIGINS="https://a.com,https://b.com" in env.
+// *.vercel.app (incl. preview deploys), localhost, 127.0.0.1 and github.io are always allowed.
+const ALLOWED = (process.env.ALLOWED_ORIGINS || '')
+  .split(',').map(s => s.trim()).filter(Boolean)
+  .concat([
+    'https://ip-reputation-scanner-chi.vercel.app',
+    'http://localhost:3000',
+    'http://127.0.0.1:3000',
+  ]);
+
+function originAllowed(origin) {
+  if (!origin) return true;                 // curl / same-origin / server-to-server
+  if (ALLOWED.includes(origin)) return true;
+  let host = '';
+  try { host = new URL(origin).hostname; } catch { return false; }
+  return /\.vercel\.app$/.test(host)        // any Vercel deploy (prod + previews)
+      || host === 'localhost'
+      || host === '127.0.0.1'
+      || /\.github\.io$/.test(host) || host === 'github.io';
+}
+
 // ── HTTPS helper ──────────────────────────────────────────────────────────
 function req(opts, body = null) {
   return new Promise((resolve, reject) => {
@@ -41,10 +63,17 @@ function talosLabel(mnemonic) {
 http.createServer(async (request, response) => {
   const u = new URL(request.url, `http://localhost:${PORT}`);
 
+  // ── CORS (the fix) ──
+  // Reflect the origin only when it is allowed; otherwise DO NOT send the header
+  // at all. Never send an empty string — that is what the browser was rejecting.
   const origin = request.headers['origin'] || '';
-  const allowed = !origin || origin.includes('localhost') || origin.includes('127.0.0.1') || origin.includes('github.io');
-  response.setHeader('Access-Control-Allow-Origin', allowed ? origin || '*' : '');
+  if (originAllowed(origin)) {
+    response.setHeader('Access-Control-Allow-Origin', origin || '*');
+    response.setHeader('Vary', 'Origin');
+  }
+  response.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS');
   response.setHeader('Access-Control-Allow-Headers', 'Content-Type,x-abuse-key,x-vt-key');
+  response.setHeader('Access-Control-Expose-Headers', 'X-RateLimit-Backoff');
   if (request.method === 'OPTIONS') { response.writeHead(204); response.end(); return; }
 
   const send = (code, body, ct = 'application/json') => {
@@ -106,6 +135,7 @@ http.createServer(async (request, response) => {
         method: 'GET',
         headers: { 'x-apikey': key, 'Accept': 'application/json' },
       });
+      if (r.status === 429) response.setHeader('X-RateLimit-Backoff', '60');
       send(r.status, r.text);
     } catch (e) { send(502, { error: e.message }); }
     return;
